@@ -1,0 +1,49 @@
+{
+  "name": "shilo-chat",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@types/react-syntax-highlighter": "^15.5.13",
+    "cheerio": "^1.0.0-rc.12",
+    "dexie": "^3.2.4",
+    "groq-sdk": "^0.3.0",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "^0.294.0",
+    "mammoth": "^1.6.0",
+    "next": "^14.0.0",
+    "openai": "^4.20.0",
+    "papaparse": "^5.4.1",
+    "pdf-parse": "^1.1.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.1",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^0.22.31",
+    "@types/node": "^20.8.0",
+    "@types/papaparse": "^5.3.14",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.51.0",
+    "eslint-config-next": "^14.0.0",
+    "ignore-loader": "^0.1.2",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "typescript": "^5.2.2"
+  }
+}

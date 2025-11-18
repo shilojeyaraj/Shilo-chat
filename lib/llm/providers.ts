@@ -1,0 +1,860 @@
+import { Message, LLMConfig, LLMResponse } from './types';
+
+export interface LLMProvider {
+  name: string;
+  call: (messages: Message[], config: LLMConfig) => Promise<LLMResponse>;
+  streamCall: (messages: Message[], config: LLMConfig) => AsyncGenerator<string>;
+  isAvailable: () => boolean;
+}
+
+/**
+ * Groq Provider - Fastest and cheapest
+ */
+const groqProvider: LLMProvider = {
+  name: 'Groq',
+  isAvailable: () => !!process.env.GROQ_API_KEY,
+  call: async (messages, config) => {
+    // Validate API key
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      throw new Error('GROQ_API_KEY is not set in environment variables');
+    }
+
+    // Groq only supports string content, not arrays (no multimodal)
+    // Convert array content to string by extracting text parts
+    const formattedMessages = messages.map((m: any) => {
+      if (Array.isArray(m.content)) {
+        // Extract text parts from array content
+        const textParts = m.content
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text || '')
+          .join(' ');
+        
+        // If there were images, add a note
+        const hasImages = m.content.some((part: any) => part.type === 'image_url' || part.type === 'image');
+        const imageNote = hasImages ? ' [Note: Images were included but Groq does not support image analysis. Please describe the image in text if needed.]' : '';
+        
+        return {
+          role: m.role,
+          content: textParts + imageNote || ' ', // Ensure non-empty
+        };
+      }
+      
+      // Already a string, ensure it's not empty
+      return {
+        role: m.role,
+        content: typeof m.content === 'string' ? (m.content.trim() || ' ') : String(m.content || ' '),
+      };
+    });
+
+    const requestBody = {
+      model: config.model,
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: false,
+    };
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `Groq API error: ${response.status}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+      } catch {
+        errorMessage = errorText || response.statusText;
+      }
+      throw new Error(`Groq API error (${response.status}): ${errorMessage}`);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices[0]?.message?.content || '',
+      usage: data.usage,
+    };
+  },
+  streamCall: async function* (messages, config) {
+    // Validate API key
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      throw new Error('GROQ_API_KEY is not set in environment variables');
+    }
+
+    // Groq only supports string content, not arrays (no multimodal)
+    // Convert array content to string by extracting text parts
+    const formattedMessages = messages.map((m: any) => {
+      if (Array.isArray(m.content)) {
+        // Extract text parts from array content
+        const textParts = m.content
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text || '')
+          .join(' ');
+        
+        // If there were images, add a note
+        const hasImages = m.content.some((part: any) => part.type === 'image_url' || part.type === 'image');
+        const imageNote = hasImages ? ' [Note: Images were included but Groq does not support image analysis. Please describe the image in text if needed.]' : '';
+        
+        return {
+          role: m.role,
+          content: textParts + imageNote || ' ', // Ensure non-empty
+        };
+      }
+      
+      // Already a string, ensure it's not empty
+      return {
+        role: m.role,
+        content: typeof m.content === 'string' ? (m.content.trim() || ' ') : String(m.content || ' '),
+      };
+    });
+
+    const requestBody = {
+      model: config.model,
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: true,
+    };
+
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `Groq API error: ${response.status}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+      } catch {
+        errorMessage = errorText || response.statusText;
+      }
+      throw new Error(`Groq API error (${response.status}): ${errorMessage}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]' || !data) continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  },
+};
+
+/**
+ * Perplexity Provider - Best for web search
+ */
+const perplexityProvider: LLMProvider = {
+  name: 'Perplexity',
+  isAvailable: () => !!process.env.PERPLEXITY_API_KEY,
+  call: async (messages, config) => {
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model || 'llama-3.1-sonar-large-128k-online',
+        messages,
+        temperature: config.temperature,
+        max_tokens: config.maxTokens,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Perplexity API error: ${response.statusText} - ${error}`);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices[0]?.message?.content || '',
+      usage: data.usage,
+    };
+  },
+  streamCall: async function* (messages, config) {
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model || 'llama-3.1-sonar-large-128k-online',
+        messages,
+        temperature: config.temperature,
+        max_tokens: config.maxTokens,
+        stream: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Perplexity API error: ${response.statusText}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]' || !data) continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  },
+};
+
+/**
+ * OpenAI Provider
+ */
+const openaiProvider: LLMProvider = {
+  name: 'OpenAI',
+  isAvailable: () => !!process.env.OPENAI_API_KEY,
+  call: async (messages, config) => {
+    // Format messages for OpenAI (handle images - OpenAI uses image_url format)
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system') // System messages handled separately
+      .map((m: any) => {
+        // If content is already an array (has images), validate and use it
+        if (Array.isArray(m.content)) {
+          // Validate and clean image URLs
+          const cleanedContent = m.content.map((part: any) => {
+            if (part.type === 'text') {
+              return { type: 'text', text: part.text || '' };
+            } else if (part.type === 'image_url' && part.image_url) {
+              // Ensure image URL is properly formatted
+              let imageUrl = part.image_url.url || part.image_url;
+              
+              // Validate base64 data URL format
+              if (typeof imageUrl === 'string') {
+                // If it's already a data URL, use it
+                if (imageUrl.startsWith('data:')) {
+                  return {
+                    type: 'image_url',
+                    image_url: { url: imageUrl },
+                  };
+                }
+                // If it's base64 without prefix, add data URL prefix
+                if (!imageUrl.includes('://')) {
+                  // Try to detect MIME type
+                  const mimeType = imageUrl.match(/^data:([^;]+)/)?.[1] || 'image/png';
+                  return {
+                    type: 'image_url',
+                    image_url: { url: `data:${mimeType};base64,${imageUrl}` },
+                  };
+                }
+              }
+              
+              return {
+                type: 'image_url',
+                image_url: { url: imageUrl },
+              };
+            }
+            return part;
+          }).filter((part: any) => {
+            // Remove invalid parts
+            if (part.type === 'text' && !part.text?.trim()) return false;
+            if (part.type === 'image_url' && !part.image_url?.url) return false;
+            return true;
+          });
+          
+          // Ensure at least one valid content block
+          if (cleanedContent.length === 0) {
+            return {
+              role: m.role,
+              content: ' ', // Empty space as fallback
+            };
+          }
+          
+          return {
+            role: m.role,
+            content: cleanedContent,
+          };
+        }
+        // Regular text message
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ', // Ensure non-empty
+        };
+      })
+      .filter((m: any) => {
+        // Filter out empty messages
+        if (m.role === 'user' && typeof m.content === 'string' && !m.content.trim()) {
+          return false;
+        }
+        return true;
+      });
+
+    // Extract system message
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : undefined;
+
+    // Determine model - use gpt-4o for vision, gpt-4-turbo for text
+    const hasImages = formattedMessages.some((m: any) => 
+      Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
+    );
+    const modelName = config.model || (hasImages ? 'gpt-4o' : 'gpt-4-turbo');
+
+    const requestBody: any = {
+      model: modelName,
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+    };
+
+    // Add system message if present (OpenAI supports it)
+    if (systemContent) {
+      requestBody.messages.unshift({
+        role: 'system',
+        content: systemContent,
+      });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `OpenAI API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('OpenAI API Error Details:', errorJson);
+        console.error('Request body:', JSON.stringify(requestBody, null, 2));
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('OpenAI API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices[0]?.message?.content || '',
+      usage: data.usage,
+    };
+  },
+  streamCall: async function* (messages, config) {
+    // Format messages for OpenAI (handle images - OpenAI uses image_url format)
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system') // System messages handled separately
+      .map((m: any) => {
+        // If content is already an array (has images), validate and use it
+        if (Array.isArray(m.content)) {
+          // Validate and clean image URLs
+          const cleanedContent = m.content.map((part: any) => {
+            if (part.type === 'text') {
+              return { type: 'text', text: part.text || '' };
+            } else if (part.type === 'image_url' && part.image_url) {
+              // Ensure image URL is properly formatted
+              let imageUrl = part.image_url.url || part.image_url;
+              
+              // Validate base64 data URL format
+              if (typeof imageUrl === 'string') {
+                // If it's already a data URL, use it
+                if (imageUrl.startsWith('data:')) {
+                  return {
+                    type: 'image_url',
+                    image_url: { url: imageUrl },
+                  };
+                }
+                // If it's base64 without prefix, add data URL prefix
+                if (!imageUrl.includes('://')) {
+                  // Try to detect MIME type
+                  const mimeType = imageUrl.match(/^data:([^;]+)/)?.[1] || 'image/png';
+                  return {
+                    type: 'image_url',
+                    image_url: { url: `data:${mimeType};base64,${imageUrl}` },
+                  };
+                }
+              }
+              
+              return {
+                type: 'image_url',
+                image_url: { url: imageUrl },
+              };
+            }
+            return part;
+          }).filter((part: any) => {
+            // Remove invalid parts
+            if (part.type === 'text' && !part.text?.trim()) return false;
+            if (part.type === 'image_url' && !part.image_url?.url) return false;
+            return true;
+          });
+          
+          // Ensure at least one valid content block
+          if (cleanedContent.length === 0) {
+            return {
+              role: m.role,
+              content: ' ', // Empty space as fallback
+            };
+          }
+          
+          return {
+            role: m.role,
+            content: cleanedContent,
+          };
+        }
+        // Regular text message
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ', // Ensure non-empty
+        };
+      })
+      .filter((m: any) => {
+        // Filter out empty messages
+        if (m.role === 'user' && typeof m.content === 'string' && !m.content.trim()) {
+          return false;
+        }
+        return true;
+      });
+
+    // Extract system message
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : undefined;
+
+    // Determine model - use gpt-4o for vision, gpt-4-turbo for text
+    const hasImages = formattedMessages.some((m: any) => 
+      Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
+    );
+    const modelName = config.model || (hasImages ? 'gpt-4o' : 'gpt-4-turbo');
+
+    const requestBody: any = {
+      model: modelName,
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: true,
+    };
+
+    // Add system message if present (OpenAI supports it)
+    if (systemContent) {
+      requestBody.messages.unshift({
+        role: 'system',
+        content: systemContent,
+      });
+    }
+
+    // Log request for debugging
+    console.log('OpenAI API Request:', JSON.stringify({
+      ...requestBody,
+      messages: requestBody.messages.map((m: any) => ({
+        role: m.role,
+        content: typeof m.content === 'string' 
+          ? m.content.substring(0, 100) + '...' 
+          : Array.isArray(m.content) 
+            ? `[Array with ${m.content.length} items]` 
+            : m.content,
+      })),
+    }, null, 2));
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `OpenAI API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('OpenAI API Error Details:', errorJson);
+        console.error('Request body:', JSON.stringify(requestBody, null, 2));
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('OpenAI API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]' || !data) continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  },
+};
+
+/**
+ * Anthropic Provider
+ */
+const anthropicProvider: LLMProvider = {
+  name: 'Anthropic',
+  isAvailable: () => !!process.env.ANTHROPIC_API_KEY,
+  call: async (messages, config) => {
+    // Format messages for Anthropic (handle images)
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : '';
+
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system' && m.role !== 'assistant') // Anthropic doesn't allow assistant messages in input
+      .map((m: any) => {
+        // If content is an array (has images), convert to Anthropic format
+        if (Array.isArray(m.content)) {
+          const contentArray = m.content
+            .map((part: any) => {
+              if (part.type === 'text') {
+                const text = part.text || '';
+                if (!text.trim()) return null; // Skip empty text parts
+                return { type: 'text', text };
+              } else if (part.type === 'image_url' || part.image_url) {
+                // Convert OpenAI format to Anthropic format
+                const imageUrl = part.image_url?.url || part.image_url;
+                if (!imageUrl) return null;
+                
+                const base64Data = imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl;
+                const mimeType = imageUrl.match(/data:([^;]+)/)?.[1] || 'image/png';
+                
+                return {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: mimeType,
+                    data: base64Data,
+                  },
+                };
+              }
+              return null;
+            })
+            .filter((part: any) => part !== null); // Remove null entries
+
+          // Anthropic requires at least one content block
+          if (contentArray.length === 0) {
+            return {
+              role: m.role,
+              content: ' ', // Empty space if no valid content
+            };
+          }
+
+          return {
+            role: m.role,
+            content: contentArray,
+          };
+        }
+        
+        // Regular text message - ensure it's a non-empty string
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ', // Empty space if no content
+        };
+      })
+      .filter((m: any) => {
+        // Filter out messages with empty content (unless it's the last user message)
+        if (m.role === 'user' && (!m.content || (typeof m.content === 'string' && !m.content.trim()))) {
+          return false;
+        }
+        return true;
+      });
+
+    // Ensure we have at least one message
+    if (formattedMessages.length === 0) {
+      throw new Error('No valid messages to send to Anthropic API');
+    }
+
+    const requestBody = {
+      model: config.model || 'claude-3-5-sonnet-20241022',
+      messages: formattedMessages,
+      system: systemContent,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+    };
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY!,
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `Anthropic API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('Anthropic API Error Details:', errorJson);
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('Anthropic API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.content[0]?.text || '',
+      usage: data.usage,
+    };
+  },
+  streamCall: async function* (messages, config) {
+    // Format messages for Anthropic (handle images)
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : '';
+
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system' && m.role !== 'assistant') // Anthropic doesn't allow assistant messages in input
+      .map((m: any) => {
+        // If content is an array (has images), convert to Anthropic format
+        if (Array.isArray(m.content)) {
+          const contentArray = m.content
+            .map((part: any) => {
+              if (part.type === 'text') {
+                const text = part.text || '';
+                if (!text.trim()) return null; // Skip empty text parts
+                return { type: 'text', text };
+              } else if (part.type === 'image_url' || part.image_url) {
+                // Convert OpenAI format to Anthropic format
+                const imageUrl = part.image_url?.url || part.image_url;
+                if (!imageUrl) return null;
+                
+                const base64Data = imageUrl.includes(',') ? imageUrl.split(',')[1] : imageUrl;
+                const mimeType = imageUrl.match(/data:([^;]+)/)?.[1] || 'image/png';
+                
+                return {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: mimeType,
+                    data: base64Data,
+                  },
+                };
+              }
+              return null;
+            })
+            .filter((part: any) => part !== null); // Remove null entries
+
+          // Anthropic requires at least one content block
+          if (contentArray.length === 0) {
+            return {
+              role: m.role,
+              content: ' ', // Empty space if no valid content
+            };
+          }
+
+          return {
+            role: m.role,
+            content: contentArray,
+          };
+        }
+        
+        // Regular text message - ensure it's a non-empty string
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ', // Empty space if no content
+        };
+      })
+      .filter((m: any) => {
+        // Filter out messages with empty content (unless it's the last user message)
+        if (m.role === 'user' && (!m.content || (typeof m.content === 'string' && !m.content.trim()))) {
+          return false;
+        }
+        return true;
+      });
+
+    // Ensure we have at least one message
+    if (formattedMessages.length === 0) {
+      throw new Error('No valid messages to send to Anthropic API');
+    }
+
+    const requestBody = {
+      model: config.model || 'claude-3-5-sonnet-20241022',
+      messages: formattedMessages,
+      system: systemContent,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: true,
+    };
+
+    // Log request for debugging (remove in production)
+    console.log('Anthropic API Request:', JSON.stringify({
+      ...requestBody,
+      messages: requestBody.messages.map((m: any) => ({
+        role: m.role,
+        content: typeof m.content === 'string' 
+          ? m.content.substring(0, 100) + '...' 
+          : Array.isArray(m.content) 
+            ? `[Array with ${m.content.length} items]` 
+            : m.content,
+      })),
+    }, null, 2));
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY!,
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `Anthropic API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('Anthropic API Error Details:', errorJson);
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('Anthropic API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (!data) continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'content_block_delta') {
+              const content = parsed.delta?.text;
+              if (content) yield content;
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  },
+};
+
+export const providers: Record<string, LLMProvider> = {
+  groq: groqProvider,
+  perplexity: perplexityProvider,
+  openai: openaiProvider,
+  anthropic: anthropicProvider,
+};
+
