@@ -11,7 +11,7 @@ export interface UsageData {
   subscriptionEndDate: string | null;
 }
 
-const FREE_TIER_LIMIT = 10; // messages per day (lowered for testing)
+const FREE_TIER_LIMIT = Infinity; // No limit for personal use
 
 /**
  * Get current usage data from localStorage
@@ -115,8 +115,8 @@ export function canSendMessage(): boolean {
     return usage.dailyMessages < limit;
   }
 
-  // Free tier: check daily limit
-  return usage.dailyMessages < FREE_TIER_LIMIT;
+  // Free tier: no limit for personal use
+  return true; // Always allow messages
 }
 
 /**

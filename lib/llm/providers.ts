@@ -377,10 +377,22 @@ const kimiProvider: LLMProvider = {
       });
     }
 
+    // Validate API key before making request
+    const apiKey = process.env.KIMI_API_KEY;
+    if (!apiKey) {
+      throw new Error('KIMI_API_KEY is not set in environment variables. Please add it to Vercel environment variables.');
+    }
+    
+    // Trim whitespace (common issue)
+    const trimmedKey = apiKey.trim();
+    if (trimmedKey.length === 0) {
+      throw new Error('KIMI_API_KEY is empty. Please check your Vercel environment variables.');
+    }
+
     const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.KIMI_API_KEY}`,
+        'Authorization': `Bearer ${trimmedKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
@@ -393,6 +405,18 @@ const kimiProvider: LLMProvider = {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.error?.message || errorJson.message || errorText;
         console.error('Kimi API Error Details:', errorJson);
+        
+        // Provide helpful error message for authentication errors
+        if (response.status === 401 || response.status === 403 || errorMessage.includes('Invalid Authentication')) {
+          const keyPreview = trimmedKey ? `${trimmedKey.substring(0, 8)}...${trimmedKey.substring(trimmedKey.length - 4)}` : 'NOT SET';
+          errorMessage = `Kimi API Authentication Failed. Please check:\n` +
+            `1. KIMI_API_KEY is set in Vercel environment variables\n` +
+            `2. The key is correct (no extra spaces, full key copied)\n` +
+            `3. The key is active (check at https://platform.moonshot.cn)\n` +
+            `4. You've redeployed after adding the key\n` +
+            `Current key preview: ${keyPreview}`;
+        }
+        
         console.error('Request body:', JSON.stringify(requestBody, null, 2));
       } catch {
         errorMessage = errorText || response.statusText;
@@ -527,10 +551,22 @@ const kimiProvider: LLMProvider = {
       })),
     }, null, 2));
 
+    // Validate API key before making request
+    const apiKey = process.env.KIMI_API_KEY;
+    if (!apiKey) {
+      throw new Error('KIMI_API_KEY is not set in environment variables. Please add it to Vercel environment variables.');
+    }
+    
+    // Trim whitespace (common issue)
+    const trimmedKey = apiKey.trim();
+    if (trimmedKey.length === 0) {
+      throw new Error('KIMI_API_KEY is empty. Please check your Vercel environment variables.');
+    }
+
     const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.KIMI_API_KEY}`,
+        'Authorization': `Bearer ${trimmedKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
@@ -543,6 +579,18 @@ const kimiProvider: LLMProvider = {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.error?.message || errorJson.message || errorText;
         console.error('Kimi API Error Details:', errorJson);
+        
+        // Provide helpful error message for authentication errors
+        if (response.status === 401 || response.status === 403 || errorMessage.includes('Invalid Authentication')) {
+          const keyPreview = trimmedKey ? `${trimmedKey.substring(0, 8)}...${trimmedKey.substring(trimmedKey.length - 4)}` : 'NOT SET';
+          errorMessage = `Kimi API Authentication Failed. Please check:\n` +
+            `1. KIMI_API_KEY is set in Vercel environment variables\n` +
+            `2. The key is correct (no extra spaces, full key copied)\n` +
+            `3. The key is active (check at https://platform.moonshot.cn)\n` +
+            `4. You've redeployed after adding the key\n` +
+            `Current key preview: ${keyPreview}`;
+        }
+        
         console.error('Request body:', JSON.stringify(requestBody, null, 2));
       } catch {
         errorMessage = errorText || response.statusText;

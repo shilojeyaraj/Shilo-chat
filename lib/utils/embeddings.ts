@@ -17,7 +17,9 @@ async function generateOpenAIEmbeddings(texts: string[]): Promise<number[][]> {
     // Server-side: Call OpenAI API directly
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not set in environment variables');
+      // RAG is optional - gracefully return empty embeddings instead of throwing
+      console.warn('OPENAI_API_KEY not set - embeddings disabled. RAG features will not work.');
+      return texts.map(() => []); // Return empty embeddings
     }
 
     try {
@@ -35,6 +37,11 @@ async function generateOpenAIEmbeddings(texts: string[]): Promise<number[][]> {
 
       if (!response.ok) {
         const error = await response.text();
+        // If authentication error, return empty embeddings instead of throwing
+        if (response.status === 401 || response.status === 403) {
+          console.warn('OpenAI API authentication failed - embeddings disabled');
+          return texts.map(() => []);
+        }
         throw new Error(`OpenAI API error: ${response.statusText} - ${error}`);
       }
 

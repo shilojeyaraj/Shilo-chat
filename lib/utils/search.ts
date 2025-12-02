@@ -33,30 +33,42 @@ export async function searchRelevantChunks(
   limit: number = 5,
   threshold: number = 0.5
 ): Promise<DocumentChunk[]> {
-  // Generate embedding for the query
-  const queryEmbedding = await generateEmbedding(query);
+  try {
+    // Generate embedding for the query
+    const queryEmbedding = await generateEmbedding(query);
 
-  // Get all chunks from database
-  const allChunks = await db.chunks.toArray();
+    // If embedding is empty (OpenAI key missing), return empty results
+    if (!queryEmbedding || queryEmbedding.length === 0) {
+      console.warn('RAG search disabled: OPENAI_API_KEY not configured');
+      return [];
+    }
 
-  if (allChunks.length === 0) {
+    // Get all chunks from database
+    const allChunks = await db.chunks.toArray();
+
+    if (allChunks.length === 0) {
+      return [];
+    }
+
+    // Calculate similarities
+    const similarities = allChunks.map((chunk) => ({
+      chunk,
+      similarity: cosineSimilarity(queryEmbedding, chunk.embedding),
+    }));
+
+    // Filter by threshold and sort by similarity
+    const relevant = similarities
+      .filter((item) => item.similarity >= threshold)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit)
+      .map((item) => item.chunk);
+
+    return relevant;
+  } catch (error) {
+    console.error('RAG search error:', error);
+    // Return empty results instead of throwing - RAG is optional
     return [];
   }
-
-  // Calculate similarities
-  const similarities = allChunks.map((chunk) => ({
-    chunk,
-    similarity: cosineSimilarity(queryEmbedding, chunk.embedding),
-  }));
-
-  // Filter by threshold and sort by similarity
-  const relevant = similarities
-    .filter((item) => item.similarity >= threshold)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit)
-    .map((item) => item.chunk);
-
-  return relevant;
 }
 
 /**

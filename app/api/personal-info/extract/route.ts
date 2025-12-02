@@ -19,22 +19,67 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Parse file content
+    // Parse file content - support multiple formats
     let textContent = '';
+    const fileName = file.name.toLowerCase();
     
-    if (fileType === 'application/pdf' || file.name.endsWith('.pdf')) {
-      // Parse PDF
-      const pdfParse = await import('pdf-parse');
+    try {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      const data = await pdfParse.default(buffer);
-      textContent = data.text;
-    } else if (fileType.startsWith('text/') || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
-      // Parse text file
-      textContent = await file.text();
-    } else {
+      
+      // PDF
+      if (fileType === 'application/pdf' || fileName.endsWith('.pdf')) {
+        const pdfParse = await import('pdf-parse');
+        const data = await pdfParse.default(buffer);
+        textContent = data.text;
+      }
+      // DOCX
+      else if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
+               fileType === 'application/msword' || 
+               fileName.endsWith('.docx') || 
+               fileName.endsWith('.doc')) {
+        const mammoth = await import('mammoth');
+        const result = await mammoth.extractRawText({ buffer });
+        textContent = result.value;
+      }
+      // TXT, MD
+      else if (fileType.startsWith('text/') || fileName.endsWith('.txt') || fileName.endsWith('.md')) {
+        textContent = buffer.toString('utf-8');
+      }
+      // CSV
+      else if (fileType === 'text/csv' || fileName.endsWith('.csv')) {
+        const Papa = await import('papaparse');
+        const csvText = buffer.toString('utf-8');
+        const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+        // Convert CSV to readable text
+        if (parsed.data.length > 0) {
+          const headers = Object.keys(parsed.data[0] as any);
+          textContent = `CSV Data:\nHeaders: ${headers.join(', ')}\n\n`;
+          parsed.data.slice(0, 50).forEach((row: any, index: number) => {
+            textContent += `Row ${index + 1}: ${headers.map((h) => `${h}=${row[h] || ''}`).join(', ')}\n`;
+          });
+        }
+      }
+      // JSON
+      else if (fileType === 'application/json' || fileName.endsWith('.json')) {
+        try {
+          const json = JSON.parse(buffer.toString('utf-8'));
+          textContent = JSON.stringify(json, null, 2);
+        } catch {
+          textContent = buffer.toString('utf-8');
+        }
+      }
+      // Unsupported
+      else {
+        return NextResponse.json(
+          { error: 'Unsupported file type. Please upload PDF, DOCX, TXT, MD, CSV, or JSON files.' },
+          { status: 400 }
+        );
+      }
+    } catch (parseError: any) {
+      console.error('File parsing error:', parseError);
       return NextResponse.json(
-        { error: 'Unsupported file type. Please upload PDF, TXT, or MD files.' },
+        { error: `Failed to parse file: ${parseError.message || parseError}. Please ensure the file is not corrupted.` },
         { status: 400 }
       );
     }
@@ -104,24 +149,17 @@ Return a JSON object with this structure:
 
 IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON object.`;
 
-    // Use Claude or GPT-4 for better extraction (they're better at structured output)
-    const availableProviders = Object.values(providers).filter(p => p.isAvailable());
+    // Use Groq for extraction (simple and reliable)
+    const groqProvider = providers.groq;
     
-    // Try providers in order of preference for extraction quality
-    let bestProvider = availableProviders.find(p => p.name === 'Kimi');
-    if (!bestProvider) {
-      bestProvider = availableProviders.find(p => p.name === 'Anthropic');
-    }
-    if (!bestProvider) {
-      bestProvider = availableProviders.find(p => p.name === 'Groq');
-    }
-    if (!bestProvider) {
-      bestProvider = availableProviders[0];
-    }
-
-    if (!bestProvider) {
+    console.log('[Personal Info Extract] Checking Groq provider availability...');
+    console.log('[Personal Info Extract] Groq provider exists:', !!groqProvider);
+    console.log('[Personal Info Extract] Groq isAvailable:', groqProvider?.isAvailable());
+    
+    if (!groqProvider || !groqProvider.isAvailable()) {
+      console.error('[Personal Info Extract] Groq provider not available. GROQ_API_KEY is required.');
       return NextResponse.json(
-        { error: 'No AI provider available. Please configure API keys.' },
+        { error: 'GROQ_API_KEY is required for extraction. Please add it to Vercel environment variables.' },
         { status: 500 }
       );
     }
@@ -129,7 +167,7 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
     const messages: Message[] = [
       {
         role: 'system',
-        content: 'You are a helpful assistant that extracts structured information from documents. Always return valid JSON only.',
+        content: 'You are a helpful assistant that extracts structured information from documents. Always return valid JSON only. Do not include markdown code blocks, just the raw JSON object.',
       },
       {
         role: 'user',
@@ -137,94 +175,46 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
       },
     ];
 
-    // Determine model based on provider - use correct model names
-    let model = '';
-    if (bestProvider.name === 'Anthropic') {
-      // Try common Claude model names
-      model = 'claude-3-5-sonnet-20241022'; // Try the dated version first
-    } else if (bestProvider.name === 'Kimi') {
-      model = 'moonshot-v1-128k'; // Kimi K2 is excellent for structured extraction
-    } else if (bestProvider.name === 'Groq') {
-      model = 'llama-3.3-70b-versatile';
-    } else {
-      model = 'moonshot-v1-128k'; // Default to Kimi
-    }
+    // Use Groq's Llama 3.3 70B model
+    const model = 'llama-3.3-70b-versatile';
+
+    console.log('[Personal Info Extract] Using Groq provider with model:', model);
+    console.log('[Personal Info Extract] Request config:', {
+      model,
+      temperature: 0.2,
+      maxTokens: 8192,
+    });
 
     let response;
     try {
-      response = await bestProvider.call(messages, {
+      response = await groqProvider.call(messages, {
         model,
-        temperature: 0.3, // Lower temperature for more consistent extraction
-        maxTokens: 4096,
+        temperature: 0.2, // Lower temperature for more consistent, structured extraction
+        maxTokens: 8192, // More tokens for comprehensive extraction
         stream: false,
       });
+      console.log('[Personal Info Extract] Groq extraction successful');
     } catch (error: any) {
-      // If Anthropic model fails, try alternative model names
-      if (bestProvider.name === 'Anthropic' && error.message?.includes('model')) {
-        console.log('Trying alternative Anthropic model names...');
-        const alternativeModels = [
-          'claude-3-5-sonnet-20240620', // Alternative dated version
-          'claude-3-5-sonnet', // Without date
-          'claude-3-opus-20240229', // Fallback to Opus
-          'claude-3-sonnet-20240229', // Older Sonnet version
-        ];
-        
-        let lastError = error;
-        for (const altModel of alternativeModels) {
-          try {
-            console.log(`Trying model: ${altModel}`);
-            response = await bestProvider.call(messages, {
-              model: altModel,
-              temperature: 0.3,
-              maxTokens: 4096,
-              stream: false,
-            });
-            console.log(`Success with model: ${altModel}`);
-            break; // Success, exit loop
-          } catch (altError: any) {
-            lastError = altError;
-            continue; // Try next model
-          }
-        }
-        
-        // If all Anthropic models failed, try Kimi as fallback
-        if (!response) {
-          const kimiProvider = availableProviders.find(p => p.name === 'Kimi');
-          if (kimiProvider) {
-            console.log('Falling back to Kimi...');
-            try {
-              response = await kimiProvider.call(messages, {
-                model: 'moonshot-v1-128k',
-                temperature: 0.3,
-                maxTokens: 4096,
-                stream: false,
-              });
-            } catch (kimiError: any) {
-              throw new Error(`All extraction attempts failed. Last error: ${lastError.message || lastError}`);
-            }
-          } else {
-            throw new Error(`Anthropic model error: ${lastError.message || lastError}. No Kimi fallback available.`);
-          }
-        }
-      } else {
-        // For non-Anthropic errors, try Kimi as fallback
-        const kimiProvider = availableProviders.find(p => p.name === 'Kimi');
-        if (kimiProvider && bestProvider.name !== 'Kimi') {
-          console.log('Falling back to Kimi due to error...');
-          try {
-            response = await kimiProvider.call(messages, {
-              model: 'moonshot-v1-128k',
-              temperature: 0.3,
-              maxTokens: 4096,
-              stream: false,
-            });
-          } catch (fallbackError: any) {
-            throw new Error(`Extraction failed: ${error.message || error}. Fallback also failed: ${fallbackError.message || fallbackError}`);
-          }
-        } else {
-          throw error;
-        }
+      console.error('Groq extraction error:', error);
+      const errorMessage = error.message || String(error);
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Invalid') || errorMessage.includes('Authentication')) {
+        throw new Error(
+          `Authentication failed. Please check that GROQ_API_KEY is set correctly in Vercel environment variables and you have redeployed.`
+        );
       }
+      
+      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+        throw new Error(
+          `Rate limit exceeded. Please try again in a few moments.`
+        );
+      }
+      
+      throw new Error(
+        `Failed to extract information: ${errorMessage}. ` +
+        `Please ensure GROQ_API_KEY is configured correctly.`
+      );
     }
 
     // Parse the response (LLMResponse has a content field)
@@ -265,15 +255,27 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
       rawText: textContent.substring(0, 500), // Include first 500 chars for reference
     });
 
-  } catch (error: any) {
-    console.error('Extraction error:', error);
-    return NextResponse.json(
-      { 
-        error: 'Failed to extract information',
-        details: error.message || String(error)
-      },
-      { status: 500 }
-    );
-  }
+    } catch (error: any) {
+      console.error('Extraction error:', error);
+      
+      // Check for authentication errors
+      if (error.message?.includes('Invalid Authentication') || error.message?.includes('401') || error.message?.includes('403') || error.message?.includes('Authentication Failed') || error.message?.includes('GROQ_API_KEY')) {
+        return NextResponse.json(
+          { 
+            error: 'API authentication failed',
+            details: error.message || 'Please check that GROQ_API_KEY is set correctly in Vercel environment variables and you have redeployed after adding it.'
+          },
+          { status: 401 }
+        );
+      }
+      
+      return NextResponse.json(
+        { 
+          error: 'Failed to extract information',
+          details: error.message || String(error)
+        },
+        { status: 500 }
+      );
+    }
 }
 

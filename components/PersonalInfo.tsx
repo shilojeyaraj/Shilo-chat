@@ -130,19 +130,28 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    const validTypes = ['application/pdf', 'text/plain', 'text/markdown'];
-    const validExtensions = ['.pdf', '.txt', '.md'];
+    // Validate file type - support multiple formats
+    const validTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'text/plain',
+      'text/markdown',
+      'text/csv',
+      'application/json',
+    ];
+    const validExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md', '.csv', '.json'];
+    const fileName = file.name.toLowerCase();
     const isValidType = validTypes.includes(file.type) || 
-                       validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+                       validExtensions.some(ext => fileName.endsWith(ext));
 
     if (!isValidType) {
-      toast.error('Please upload a PDF, TXT, or MD file');
+      toast.error('Please upload a PDF, DOCX, TXT, MD, CSV, or JSON file');
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10MB');
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error('File size must be less than 20MB');
       return;
     }
 
@@ -402,7 +411,7 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
               )}
               <input
                 type="file"
-                accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+                accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain,text/markdown,text/csv,application/json"
                 onChange={handleFileUpload}
                 className="hidden"
                 disabled={isExtracting}
