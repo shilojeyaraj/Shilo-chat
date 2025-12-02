@@ -634,6 +634,331 @@ const kimiProvider: LLMProvider = {
 };
 
 /**
+ * OpenAI Provider - Best for vision/image analysis
+ */
+const openaiProvider: LLMProvider = {
+  name: 'OpenAI',
+  isAvailable: () => !!process.env.OPENAI_API_KEY,
+  call: async (messages, config) => {
+    // Validate API key
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set in environment variables');
+    }
+
+    // Format messages for OpenAI (handle images)
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : undefined;
+
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system') // System messages handled separately
+      .map((m: any) => {
+        // If content is an array (has images), use it directly (OpenAI format)
+        if (Array.isArray(m.content)) {
+          // Validate and clean image URLs
+          const cleanedContent = m.content.map((part: any) => {
+            if (part.type === 'text') {
+              return { type: 'text', text: part.text || '' };
+            } else if (part.type === 'image_url' && part.image_url) {
+              // Ensure image URL is properly formatted
+              let imageUrl = part.image_url.url || part.image_url;
+              
+              // Validate base64 data URL format
+              if (typeof imageUrl === 'string') {
+                // If it's already a data URL, use it
+                if (imageUrl.startsWith('data:')) {
+                  return {
+                    type: 'image_url',
+                    image_url: { url: imageUrl },
+                  };
+                }
+                // If it's base64 without prefix, add data URL prefix
+                if (!imageUrl.includes('://')) {
+                  // Try to detect MIME type
+                  const mimeType = imageUrl.match(/^data:([^;]+)/)?.[1] || 'image/png';
+                  return {
+                    type: 'image_url',
+                    image_url: { url: `data:${mimeType};base64,${imageUrl}` },
+                  };
+                }
+              }
+              
+              return {
+                type: 'image_url',
+                image_url: { url: imageUrl },
+              };
+            }
+            return part;
+          }).filter((part: any) => {
+            // Remove invalid parts
+            if (part.type === 'text' && !part.text?.trim()) return false;
+            if (part.type === 'image_url' && !part.image_url?.url) return false;
+            return true;
+          });
+          
+          // Ensure at least one valid content block
+          if (cleanedContent.length === 0) {
+            return {
+              role: m.role,
+              content: ' ', // Empty space as fallback
+            };
+          }
+          
+          return {
+            role: m.role,
+            content: cleanedContent,
+          };
+        }
+        
+        // Regular text message
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ', // Ensure non-empty
+        };
+      })
+      .filter((m: any) => {
+        // Filter out empty messages
+        if (m.role === 'user' && typeof m.content === 'string' && !m.content.trim()) {
+          return false;
+        }
+        return true;
+      });
+
+    // Determine model - use gpt-4o for vision, gpt-4o-mini for text (or config override)
+    const hasImages = formattedMessages.some((m: any) => 
+      Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
+    );
+    const modelName = config.model || (hasImages ? 'gpt-4o' : 'gpt-4o-mini');
+
+    const requestBody: any = {
+      model: modelName,
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+    };
+
+    // Add system message if present
+    if (systemContent) {
+      requestBody.messages.unshift({
+        role: 'system',
+        content: systemContent,
+      });
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `OpenAI API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('OpenAI API Error Details:', errorJson);
+        console.error('OpenAI API Request Body:', JSON.stringify(requestBody, null, 2));
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('OpenAI API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices[0]?.message?.content || '',
+      usage: data.usage,
+    };
+  },
+  streamCall: async function* (messages, config) {
+    // Validate API key
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set in environment variables');
+    }
+
+    // Format messages for OpenAI (handle images)
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : undefined;
+
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system') // System messages handled separately
+      .map((m: any) => {
+        // If content is an array (has images), use it directly (OpenAI format)
+        if (Array.isArray(m.content)) {
+          // Validate and clean image URLs
+          const cleanedContent = m.content.map((part: any) => {
+            if (part.type === 'text') {
+              return { type: 'text', text: part.text || '' };
+            } else if (part.type === 'image_url' && part.image_url) {
+              // Ensure image URL is properly formatted
+              let imageUrl = part.image_url.url || part.image_url;
+              
+              // Validate base64 data URL format
+              if (typeof imageUrl === 'string') {
+                // If it's already a data URL, use it
+                if (imageUrl.startsWith('data:')) {
+                  return {
+                    type: 'image_url',
+                    image_url: { url: imageUrl },
+                  };
+                }
+                // If it's base64 without prefix, add data URL prefix
+                if (!imageUrl.includes('://')) {
+                  // Try to detect MIME type
+                  const mimeType = imageUrl.match(/^data:([^;]+)/)?.[1] || 'image/png';
+                  return {
+                    type: 'image_url',
+                    image_url: { url: `data:${mimeType};base64,${imageUrl}` },
+                  };
+                }
+              }
+              
+              return {
+                type: 'image_url',
+                image_url: { url: imageUrl },
+              };
+            }
+            return part;
+          }).filter((part: any) => {
+            // Remove invalid parts
+            if (part.type === 'text' && !part.text?.trim()) return false;
+            if (part.type === 'image_url' && !part.image_url?.url) return false;
+            return true;
+          });
+          
+          // Ensure at least one valid content block
+          if (cleanedContent.length === 0) {
+            return {
+              role: m.role,
+              content: ' ', // Empty space as fallback
+            };
+          }
+          
+          return {
+            role: m.role,
+            content: cleanedContent,
+          };
+        }
+        
+        // Regular text message
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ', // Ensure non-empty
+        };
+      })
+      .filter((m: any) => {
+        // Filter out empty messages
+        if (m.role === 'user' && typeof m.content === 'string' && !m.content.trim()) {
+          return false;
+        }
+        return true;
+      });
+
+    // Determine model - use gpt-4o for vision, gpt-4o-mini for text (or config override)
+    const hasImages = formattedMessages.some((m: any) => 
+      Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
+    );
+    const modelName = config.model || (hasImages ? 'gpt-4o' : 'gpt-4o-mini');
+
+    const requestBody: any = {
+      model: modelName,
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: true,
+    };
+
+    // Add system message if present
+    if (systemContent) {
+      requestBody.messages.unshift({
+        role: 'system',
+        content: systemContent,
+      });
+    }
+
+    // Log request for debugging
+    console.log('OpenAI API Request:', JSON.stringify({
+      ...requestBody,
+      messages: requestBody.messages.map((m: any) => ({
+        role: m.role,
+        content: typeof m.content === 'string' 
+          ? m.content.substring(0, 100) + '...' 
+          : Array.isArray(m.content) 
+            ? `[Array with ${m.content.length} items]` 
+            : m.content,
+      })),
+    }, null, 2));
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `OpenAI API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('OpenAI API Error Details:', errorJson);
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('OpenAI API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]' || !data) continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  },
+};
+
+/**
  * Anthropic Provider
  */
 const anthropicProvider: LLMProvider = {
@@ -910,5 +1235,6 @@ export const providers: Record<string, LLMProvider> = {
   perplexity: perplexityProvider,
   kimi: kimiProvider,
   anthropic: anthropicProvider,
+  openai: openaiProvider,
 };
 

@@ -59,6 +59,7 @@ const DEFAULT_MODEL_OPTIONS = [
   { value: 'kimi/moonshot-v1-128k', label: 'Kimi K2 (Default)' },
   { value: 'groq/llama-3.1-8b-instant', label: 'Llama 8B (Fastest)' },
   { value: 'groq/llama-3.3-70b-versatile', label: 'Llama 70B (Balanced)' },
+  { value: 'openai/gpt-4o', label: 'GPT-4o (Vision - Best)' },
   { value: 'anthropic/claude-3-5-sonnet-20240620', label: 'Claude 3.5 (Vision/Files)' },
   { value: 'perplexity/llama-3.1-sonar-large-128k-online', label: 'Perplexity (Search)' },
 ];
@@ -68,6 +69,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   kimi: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
   anthropic: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   perplexity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
+  openai: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
 };
 
 const TASK_ICONS: Record<string, any> = {
@@ -885,6 +887,7 @@ export default function ChatInterface() {
     if (provider === 'kimi') return 'text-blue-400';
     if (provider === 'anthropic') return 'text-purple-400';
     if (provider === 'perplexity') return 'text-orange-400';
+    if (provider === 'openai') return 'text-emerald-400';
     return 'text-slate-400';
   };
 
@@ -1382,9 +1385,11 @@ export default function ChatInterface() {
                       // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
                       if ((selectedImages.length > 0 || attachedFiles.length > 0) && 
                           (provider === 'groq' || provider === 'perplexity' || provider === 'kimi')) {
-                        toast.error('Kimi K2, Groq, and Perplexity do not support images/files. Auto-selecting Claude.');
-                        // Auto-select Claude (Anthropic) for vision/file processing
+                        toast.error('Kimi K2, Groq, and Perplexity do not support images/files. Auto-selecting OpenAI (GPT-4o).');
+                        // Auto-select OpenAI (preferred) or Claude (Anthropic) for vision/file processing
                         const visionModel = modelOptions.find(opt => 
+                          opt.value.startsWith('openai/')
+                        ) || modelOptions.find(opt => 
                           opt.value.startsWith('anthropic/')
                         );
                         if (visionModel) {
@@ -1401,12 +1406,12 @@ export default function ChatInterface() {
                       toast.success(`Switched to ${selectedLabel}`, { duration: 2000 });
                     }}
                     className={`appearance-none px-3 py-2 pr-8 text-xs font-medium rounded-xl border border-slate-700/50 bg-slate-800/50 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all duration-200 cursor-pointer ${getCurrentModelColor()}`}
-                    title={(selectedImages.length > 0 || attachedFiles.length > 0) ? "Select Claude (Anthropic) for image/file processing - Kimi K2 does not support images" : "Select AI model for this conversation (default: Kimi K2)"}
+                    title={(selectedImages.length > 0 || attachedFiles.length > 0) ? "Select OpenAI (GPT-4o) or Claude (Anthropic) for image/file processing - Kimi K2 does not support images" : "Select AI model for this conversation (default: Kimi K2)"}
                   >
                     {modelOptions.map((opt) => {
                       const optProvider = opt.value.split('/')[0];
-                      // Only Anthropic (Claude) supports vision/file extraction
-                      const supportsVision = optProvider === 'anthropic' || opt.value === '';
+                      // OpenAI (GPT-4o) and Anthropic (Claude) support vision/file extraction
+                      const supportsVision = optProvider === 'openai' || optProvider === 'anthropic' || opt.value === '';
                       const isDisabled = (selectedImages.length > 0 || attachedFiles.length > 0) && !supportsVision && opt.value !== '';
                       
                       return (

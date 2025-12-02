@@ -15,7 +15,7 @@ export type TaskType =
   | 'general';
 
 export interface ModelConfig {
-  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity';
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai';
   model: string;
   maxTokens: number;
   temperature: number;
@@ -87,11 +87,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   vision: {
-    provider: 'anthropic', // Claude supports vision - Kimi K2 does not
-    model: 'claude-3-5-sonnet-20240620', // Claude 3.5 Sonnet for vision/file processing
+    provider: 'openai', // OpenAI GPT-4o has best vision capabilities
+    model: 'gpt-4o', // GPT-4o for vision/image processing
     maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 3,
+    costPer1M: 5,
   },
   general: {
     provider: 'kimi',
@@ -172,7 +172,7 @@ export async function classifyTask(
  * Get fallback model config for a provider
  */
 function getFallbackConfig(
-  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity'
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai'
 ): ModelConfig {
   const fallbacks: Record<string, ModelConfig> = {
     groq: {
@@ -188,6 +188,13 @@ function getFallbackConfig(
       maxTokens: 4096,
       temperature: 0.7,
       costPer1M: 3,
+    },
+    openai: {
+      provider: 'openai',
+      model: 'gpt-4o',
+      maxTokens: 4096,
+      temperature: 0.7,
+      costPer1M: 5,
     },
     kimi: {
       provider: 'kimi',
@@ -264,15 +271,26 @@ export async function routeRequest(
   // User can manually override
   if (context.userOverride) {
     const [provider, model] = context.userOverride.split('/');
-    const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity';
+    const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai';
     
     // CRITICAL: Prevent using non-vision models with images or files
     // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
     if ((context.hasImages || (context.fileCount && context.fileCount > 0)) && 
         (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi')) {
-      // Auto-switch to Claude instead of throwing error
-      console.log(`Auto-switching from ${overrideProvider} to Claude for image/file processing`);
-      if (available.anthropic) {
+      // Auto-switch to OpenAI (preferred) or Claude for vision
+      console.log(`Auto-switching from ${overrideProvider} to OpenAI/Claude for image/file processing`);
+      if (available.openai) {
+        return {
+          config: {
+            provider: 'openai',
+            model: 'gpt-4o',
+            maxTokens: 8192,
+            temperature: 0.7,
+            costPer1M: 5,
+          },
+          taskType: context.hasImages ? 'vision' : 'long_context',
+        };
+      } else if (available.anthropic) {
         return {
           config: {
             provider: 'anthropic',
@@ -286,7 +304,7 @@ export async function routeRequest(
       } else {
         throw new Error(
           `Cannot use ${overrideProvider} with images/files. ` +
-          `Please add ANTHROPIC_API_KEY to use image/file analysis. ` +
+          `Please add OPENAI_API_KEY or ANTHROPIC_API_KEY to use image/file analysis. ` +
           `Kimi K2 does not support image extraction.`
         );
       }
@@ -357,21 +375,29 @@ export async function routeRequest(
 
   // CRITICAL: If images or files are present, MUST use vision-capable model
   // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
-  // Use Claude (Anthropic) for vision and file processing
+  // Prioritize OpenAI (GPT-4o) for vision, fallback to Claude (Anthropic)
   if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
-    // Force vision-capable providers only - Claude supports both images and file extraction
-    const visionProviders = ['anthropic'] as const;
+    // Force vision-capable providers only - OpenAI (preferred) or Anthropic
+    const visionProviders = ['openai', 'anthropic'] as const;
     const availableVision = visionProviders.find(p => available[p]);
     
     if (availableVision) {
-      // Use Claude for vision and file processing
-      const visionConfig: ModelConfig = {
+      // Use OpenAI GPT-4o (preferred) or Claude for vision and file processing
+      const visionConfig: ModelConfig = availableVision === 'openai' ? {
+        provider: 'openai',
+        model: 'gpt-4o',
+        maxTokens: 8192, // More tokens for file processing
+        temperature: 0.7,
+        costPer1M: 5,
+      } : {
         provider: 'anthropic',
         model: 'claude-3-5-sonnet-20240620',
         maxTokens: 8192, // More tokens for file processing
         temperature: 0.7,
         costPer1M: 3,
       };
+      
+      console.log(`Using ${availableVision} (${visionConfig.model}) for image/file processing`);
       
       return {
         config: visionConfig,
@@ -381,7 +407,7 @@ export async function routeRequest(
       // No vision-capable provider available
       throw new Error(
         'Images or files detected but no vision-capable model available. ' +
-        'Please add ANTHROPIC_API_KEY to use image/file analysis. ' +
+        'Please add OPENAI_API_KEY or ANTHROPIC_API_KEY to use image/file analysis. ' +
         'Kimi K2 does not support image extraction.'
       );
     }

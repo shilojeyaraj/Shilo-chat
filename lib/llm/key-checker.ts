@@ -8,6 +8,7 @@ export interface AvailableProviders {
   perplexity: boolean;
   kimi: boolean;
   anthropic: boolean;
+  openai: boolean;
 }
 
 /**
@@ -19,6 +20,7 @@ export function getAvailableProviders(): AvailableProviders {
     perplexity: !!process.env.PERPLEXITY_API_KEY,
     kimi: !!process.env.KIMI_API_KEY,
     anthropic: !!process.env.ANTHROPIC_API_KEY,
+    openai: !!process.env.OPENAI_API_KEY,
   };
 }
 
@@ -27,18 +29,19 @@ export function getAvailableProviders(): AvailableProviders {
  * Falls back to available providers if preferred one isn't available
  */
 export function getBestAvailableProvider(
-  preferred: 'groq' | 'perplexity' | 'kimi' | 'anthropic',
+  preferred: 'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai',
   available: AvailableProviders
-): 'groq' | 'perplexity' | 'kimi' | 'anthropic' | null {
+): 'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai' | null {
   // If preferred is available, use it
   if (available[preferred]) {
     return preferred;
   }
 
   // Fallback priority order
-  const fallbackOrder: Array<'groq' | 'perplexity' | 'kimi' | 'anthropic'> = [
+  const fallbackOrder: Array<'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai'> = [
     'groq',      // Cheapest, fastest
     'kimi',      // Great quality, good pricing (Kimi K2)
+    'openai',    // Best vision, good quality
     'anthropic', // Good quality, moderate cost
     'perplexity', // Specialized for search
   ];
