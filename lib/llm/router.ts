@@ -46,7 +46,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   code_editing: {
     provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-5-sonnet-20240620',
     maxTokens: 8192,
     temperature: 0.5,
     costPer1M: 3,
@@ -67,7 +67,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   creative_writing: {
     provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-5-sonnet-20240620',
     maxTokens: 8192,
     temperature: 1.0,
     costPer1M: 3,
@@ -81,14 +81,14 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   long_context: {
     provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-5-sonnet-20240620',
     maxTokens: 8192,
     temperature: 0.7,
     costPer1M: 3,
   },
   vision: {
     provider: 'anthropic', // Claude supports vision - Kimi K2 does not
-    model: 'claude-3-5-sonnet-20241022', // Claude 3.5 Sonnet for vision/file processing
+    model: 'claude-3-5-sonnet-20240620', // Claude 3.5 Sonnet for vision/file processing
     maxTokens: 4096,
     temperature: 0.7,
     costPer1M: 3,
@@ -184,7 +184,7 @@ function getFallbackConfig(
     },
     anthropic: {
       provider: 'anthropic',
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20240620',
       maxTokens: 4096,
       temperature: 0.7,
       costPer1M: 3,
@@ -276,7 +276,7 @@ export async function routeRequest(
         return {
           config: {
             provider: 'anthropic',
-            model: 'claude-3-5-sonnet-20241022',
+            model: 'claude-3-5-sonnet-20240620',
             maxTokens: 8192,
             temperature: 0.7,
             costPer1M: 3,
@@ -367,7 +367,7 @@ export async function routeRequest(
       // Use Claude for vision and file processing
       const visionConfig: ModelConfig = {
         provider: 'anthropic',
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-3-5-sonnet-20240620',
         maxTokens: 8192, // More tokens for file processing
         temperature: 0.7,
         costPer1M: 3,
@@ -393,7 +393,7 @@ export async function routeRequest(
     if (taskType === 'code_generation' || taskType === 'code_editing') {
       const codingConfig = {
         provider: 'anthropic' as const,
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-3-5-sonnet-20240620',
         maxTokens: 8192,
         temperature: 0.3,
         costPer1M: 3,

@@ -713,7 +713,7 @@ const anthropicProvider: LLMProvider = {
     }
 
     const requestBody = {
-      model: config.model || 'claude-3-5-sonnet-20241022',
+      model: config.model || 'claude-3-5-sonnet-20240620',
       messages: formattedMessages,
       system: systemContent,
       temperature: config.temperature,
@@ -824,7 +824,7 @@ const anthropicProvider: LLMProvider = {
     }
 
     const requestBody = {
-      model: config.model || 'claude-3-5-sonnet-20241022',
+      model: config.model || 'claude-3-5-sonnet-20240620',
       messages: formattedMessages,
       system: systemContent,
       temperature: config.temperature,

@@ -59,7 +59,7 @@ const DEFAULT_MODEL_OPTIONS = [
   { value: 'kimi/moonshot-v1-128k', label: 'Kimi K2 (Default)' },
   { value: 'groq/llama-3.1-8b-instant', label: 'Llama 8B (Fastest)' },
   { value: 'groq/llama-3.3-70b-versatile', label: 'Llama 70B (Balanced)' },
-  { value: 'anthropic/claude-3-5-sonnet-20241022', label: 'Claude 3.5 (Vision/Files)' },
+  { value: 'anthropic/claude-3-5-sonnet-20240620', label: 'Claude 3.5 (Vision/Files)' },
   { value: 'perplexity/llama-3.1-sonar-large-128k-online', label: 'Perplexity (Search)' },
 ];
 

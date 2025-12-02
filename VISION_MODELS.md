@@ -3,7 +3,7 @@
 ## ✅ Models That Support Images
 
 ### **Anthropic (Claude)**
-- ✅ **Claude 3.5 Sonnet** (`claude-3-5-sonnet-20241022`)
+- ✅ **Claude 3.5 Sonnet** (`claude-3-5-sonnet-20240620`)
   - Excellent vision capabilities
   - Can analyze images, screenshots, diagrams, charts
   - Supports base64 encoded images

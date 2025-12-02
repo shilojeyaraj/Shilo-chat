@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     const model = bestProvider.name === 'Kimi' 
       ? 'moonshot-v1-128k'
       : bestProvider.name === 'Anthropic'
-      ? 'claude-3-5-sonnet-20241022'
+      ? 'claude-3-5-sonnet-20240620'
       : 'llama-3.3-70b-versatile';
 
     const prompt = `You are an expert resume optimizer. Your task is to optimize a LaTeX resume for a specific job posting while PRESERVING THE EXACT LaTeX STRUCTURE, FORMATTING, AND SECTION ORDER.
