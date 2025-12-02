@@ -15,7 +15,7 @@ export type TaskType =
   | 'general';
 
 export interface ModelConfig {
-  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai';
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini';
   model: string;
   maxTokens: number;
   temperature: number;
@@ -87,11 +87,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   vision: {
-    provider: 'openai', // OpenAI GPT-4o has best vision capabilities
-    model: 'gpt-4o', // GPT-4o for vision/image processing
-    maxTokens: 4096,
+    provider: 'gemini', // Google Gemini is best for vision/image analysis
+    model: 'gemini-2.0-flash-exp', // Gemini 2.0 Flash for optimal vision performance
+    maxTokens: 8192,
     temperature: 0.7,
-    costPer1M: 5,
+    costPer1M: 0.075, // Gemini is very affordable (free tier available)
   },
   general: {
     provider: 'kimi',
@@ -172,7 +172,7 @@ export async function classifyTask(
  * Get fallback model config for a provider
  */
 function getFallbackConfig(
-  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai'
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini'
 ): ModelConfig {
   const fallbacks: Record<string, ModelConfig> = {
     groq: {
@@ -195,6 +195,13 @@ function getFallbackConfig(
       maxTokens: 4096,
       temperature: 0.7,
       costPer1M: 5,
+    },
+    gemini: {
+      provider: 'gemini',
+      model: 'gemini-2.0-flash-exp',
+      maxTokens: 8192,
+      temperature: 0.7,
+      costPer1M: 0.075,
     },
     kimi: {
       provider: 'kimi',
@@ -271,21 +278,32 @@ export async function routeRequest(
   // User can manually override
   if (context.userOverride) {
     const [provider, model] = context.userOverride.split('/');
-    const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai';
+    const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini';
     
     // CRITICAL: Prevent using non-vision models with images or files
     // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
-    // Only OpenAI GPT-4o supports vision (no Claude fallback)
+    // Only Gemini and OpenAI support vision
     if ((context.hasImages || (context.fileCount && context.fileCount > 0)) && 
         (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi' || overrideProvider === 'anthropic')) {
-      // Auto-switch to OpenAI GPT-4o for vision
-      console.log(`Auto-switching from ${overrideProvider} to OpenAI GPT-4o for image/file processing`);
-      if (available.openai) {
+      // Auto-switch to Gemini (preferred) or OpenAI for vision
+      console.log(`Auto-switching from ${overrideProvider} to Gemini for image/file processing`);
+      if (available.gemini) {
+        return {
+          config: {
+            provider: 'gemini',
+            model: 'gemini-2.0-flash-exp',
+            maxTokens: 8192,
+            temperature: 0.7,
+            costPer1M: 0.075,
+          },
+          taskType: context.hasImages ? 'vision' : 'long_context',
+        };
+      } else if (available.openai) {
         return {
           config: {
             provider: 'openai',
             model: 'gpt-4o',
-            maxTokens: 8192,
+            maxTokens: 2048,
             temperature: 0.7,
             costPer1M: 5,
           },
@@ -294,8 +312,8 @@ export async function routeRequest(
       } else {
         throw new Error(
           `Cannot use ${overrideProvider} with images/files. ` +
-          `Please add OPENAI_API_KEY to use image/file analysis. ` +
-          `Only OpenAI GPT-4o supports image extraction.`
+          `Please add GEMINI_API_KEY or OPENAI_API_KEY to use image/file analysis. ` +
+          `Only Gemini and OpenAI support image extraction.`
         );
       }
     }
@@ -363,31 +381,46 @@ export async function routeRequest(
     }
   }
 
-  // CRITICAL: If images or files are present, MUST use OpenAI GPT-4o
+  // CRITICAL: If images or files are present, MUST use Gemini (preferred) or OpenAI
   // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
-  // Only OpenAI GPT-4o is used for vision tasks (no Claude fallback)
+  // Gemini is the preferred choice for vision tasks (better handling of large images)
   if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
-    // Force OpenAI GPT-4o for vision and file processing
-    if (available.openai) {
+    // Force Gemini (preferred) or OpenAI for vision and file processing
+    if (available.gemini) {
+      const visionConfig: ModelConfig = {
+        provider: 'gemini',
+        model: 'gemini-2.0-flash-exp',
+        maxTokens: 8192, // Gemini handles large images better, can use more tokens
+        temperature: 0.7,
+        costPer1M: 0.075,
+      };
+      
+      console.log(`Using Gemini (gemini-2.0-flash-exp) for image/file processing`);
+      
+      return {
+        config: visionConfig,
+        taskType: context.hasImages ? 'vision' : 'long_context',
+      };
+    } else if (available.openai) {
       const visionConfig: ModelConfig = {
         provider: 'openai',
         model: 'gpt-4o',
-        maxTokens: 8192, // More tokens for file processing
+        maxTokens: 2048, // Reduced for vision - images take most of the input token budget
         temperature: 0.7,
         costPer1M: 5,
       };
       
-      console.log(`Using OpenAI (gpt-4o) for image/file processing`);
+      console.log(`Using OpenAI (gpt-4o) for image/file processing (Gemini not available)`);
       
       return {
         config: visionConfig,
         taskType: context.hasImages ? 'vision' : 'long_context',
       };
     } else {
-      // No OpenAI available
+      // No vision-capable provider available
       throw new Error(
-        'Images or files detected but OpenAI GPT-4o is not available. ' +
-        'Please add OPENAI_API_KEY to use image/file analysis. ' +
+        'Images or files detected but no vision-capable model is available. ' +
+        'Please add GEMINI_API_KEY (preferred) or OPENAI_API_KEY to use image/file analysis. ' +
         'Kimi K2, Groq, and Perplexity do not support image extraction.'
       );
     }

@@ -143,9 +143,24 @@ export function buildOptimizedContext(
 
 /**
  * Estimate token count (rough approximation)
+ * For images in base64, use more accurate estimation
  */
 export function estimateTokens(text: string): number {
-  // Rough estimate: 1 token ≈ 4 characters
+  // Check if text contains base64 image data
+  if (text.includes('data:image') && text.includes('base64,')) {
+    // Base64 images are much larger - estimate more accurately
+    // Base64 encoding: ~4 chars per 3 bytes, but images are decoded differently
+    // For vision models, base64 images are roughly: image_size_bytes / 768 * 3 (approximate)
+    // But for simplicity, we'll use a more conservative estimate
+    const base64Match = text.match(/base64,([A-Za-z0-9+/=]+)/);
+    if (base64Match) {
+      const base64Length = base64Match[1].length;
+      // Base64 images in GPT-4o: roughly 85 tokens per 1000 base64 chars
+      // This is more accurate than the 1 token per 4 chars estimate
+      return Math.ceil(base64Length / 11.76); // ~85 tokens per 1000 chars = 1 token per ~11.76 chars
+    }
+  }
+  // Rough estimate: 1 token ≈ 4 characters for text
   return Math.ceil(text.length / 4);
 }
 

@@ -1230,11 +1230,302 @@ const anthropicProvider: LLMProvider = {
   },
 };
 
+/**
+ * Google Gemini Provider - Best for vision/image analysis
+ * Uses Gemini 2.0 Flash for optimal vision performance
+ */
+const geminiProvider: LLMProvider = {
+  name: 'Gemini',
+  isAvailable: () => !!process.env.GEMINI_API_KEY,
+  call: async (messages, config) => {
+    // Validate API key
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not set in environment variables');
+    }
+
+    // Format messages for Gemini API
+    // Gemini uses a different format: contents array with parts (text and inlineData for images)
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : '';
+
+    // Convert messages to Gemini format
+    const contents: any[] = [];
+    
+    for (const m of messages) {
+      if (m.role === 'system') continue; // System messages handled separately
+      
+      const parts: any[] = [];
+      
+      // Handle content - can be string or array (for multimodal)
+      if (Array.isArray(m.content)) {
+        // Multimodal content (text + images)
+        for (const part of m.content) {
+          if (part.type === 'text') {
+            if (part.text && part.text.trim()) {
+              parts.push({ text: part.text });
+            }
+          } else if (part.type === 'image_url' && part.image_url) {
+            // Convert OpenAI format to Gemini format
+            const imageUrl = part.image_url.url || part.image_url;
+            if (typeof imageUrl === 'string' && imageUrl.startsWith('data:')) {
+              // Extract base64 and mime type
+              const match = imageUrl.match(/data:([^;]+);base64,(.+)/);
+              if (match) {
+                const mimeType = match[1];
+                const base64Data = match[2];
+                
+                parts.push({
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64Data,
+                  },
+                });
+              }
+            }
+          }
+        }
+      } else if (typeof m.content === 'string' && m.content.trim()) {
+        // Text-only message
+        parts.push({ text: m.content });
+      }
+      
+      // Only add message if it has valid parts
+      if (parts.length > 0) {
+        contents.push({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: parts,
+        });
+      }
+    }
+
+    // Ensure we have at least one content
+    if (contents.length === 0) {
+      throw new Error('No valid messages to send to Gemini API');
+    }
+
+    // Build request body
+    const requestBody: any = {
+      contents: contents,
+      generationConfig: {
+        temperature: config.temperature,
+        maxOutputTokens: config.maxTokens,
+      },
+    };
+
+    // Add system instruction if present
+    if (systemContent) {
+      requestBody.systemInstruction = {
+        parts: [{ text: systemContent }],
+      };
+    }
+
+    // Use Gemini 2.0 Flash for vision (best model for images)
+    const modelName = config.model || 'gemini-2.0-flash-exp';
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey.trim()}`;
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `Gemini API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('Gemini API Error Details:', errorJson);
+        console.error('Gemini API Request Body:', JSON.stringify({
+          ...requestBody,
+          contents: requestBody.contents.map((c: any) => ({
+            role: c.role,
+            parts: c.parts.map((p: any) => 
+              p.text ? { text: p.text.substring(0, 100) + '...' } : 
+              p.inlineData ? { inlineData: { mimeType: p.inlineData.mimeType, data: '[base64 data]' } } : 
+              p
+            ),
+          })),
+        }, null, 2));
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('Gemini API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    
+    // Extract response text from Gemini format
+    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const usage = data.usageMetadata || {};
+
+    return {
+      content: responseText,
+      usage: {
+        promptTokens: usage.promptTokenCount || 0,
+        completionTokens: usage.candidatesTokenCount || 0,
+        totalTokens: usage.totalTokenCount || 0,
+      },
+    };
+  },
+  streamCall: async function* (messages, config) {
+    // Validate API key
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not set in environment variables');
+    }
+
+    // Format messages for Gemini API (same as call method)
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : '';
+
+    const contents: any[] = [];
+    
+    for (const m of messages) {
+      if (m.role === 'system') continue;
+      
+      const parts: any[] = [];
+      
+      if (Array.isArray(m.content)) {
+        for (const part of m.content) {
+          if (part.type === 'text') {
+            if (part.text && part.text.trim()) {
+              parts.push({ text: part.text });
+            }
+          } else if (part.type === 'image_url' && part.image_url) {
+            const imageUrl = part.image_url.url || part.image_url;
+            if (typeof imageUrl === 'string' && imageUrl.startsWith('data:')) {
+              const match = imageUrl.match(/data:([^;]+);base64,(.+)/);
+              if (match) {
+                const mimeType = match[1];
+                const base64Data = match[2];
+                
+                parts.push({
+                  inlineData: {
+                    mimeType: mimeType,
+                    data: base64Data,
+                  },
+                });
+              }
+            }
+          }
+        }
+      } else if (typeof m.content === 'string' && m.content.trim()) {
+        parts.push({ text: m.content });
+      }
+      
+      if (parts.length > 0) {
+        contents.push({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: parts,
+        });
+      }
+    }
+
+    if (contents.length === 0) {
+      throw new Error('No valid messages to send to Gemini API');
+    }
+
+    const requestBody: any = {
+      contents: contents,
+      generationConfig: {
+        temperature: config.temperature,
+        maxOutputTokens: config.maxTokens,
+      },
+    };
+
+    if (systemContent) {
+      requestBody.systemInstruction = {
+        parts: [{ text: systemContent }],
+      };
+    }
+
+    const modelName = config.model || 'gemini-2.0-flash-exp';
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?key=${apiKey.trim()}`;
+
+    // Log request for debugging
+    console.log('Gemini API Request:', JSON.stringify({
+      ...requestBody,
+      contents: requestBody.contents.map((c: any) => ({
+        role: c.role,
+        parts: c.parts.map((p: any) => 
+          p.text ? { text: p.text.substring(0, 100) + '...' } : 
+          p.inlineData ? { inlineData: { mimeType: p.inlineData.mimeType, data: '[base64 data]' } } : 
+          p
+        ),
+      })),
+    }, null, 2));
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `Gemini API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('Gemini API Error Details:', errorJson);
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('Gemini API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(line);
+            // Gemini streaming format: each chunk is a complete JSON object
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              yield text;
+            }
+          } catch (e) {
+            // Ignore parse errors for incomplete chunks
+          }
+        }
+      }
+    }
+  },
+};
+
 export const providers: Record<string, LLMProvider> = {
   groq: groqProvider,
   perplexity: perplexityProvider,
   kimi: kimiProvider,
   anthropic: anthropicProvider,
   openai: openaiProvider,
+  gemini: geminiProvider,
 };
 
