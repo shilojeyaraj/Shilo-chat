@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar } from 'lucide-react';
+import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar, ChevronDown } from 'lucide-react';
 import MessageContent from './MessageContent';
 import toast from 'react-hot-toast';
 import PdfUpload from './PdfUpload';
@@ -106,6 +106,7 @@ export default function ChatInterface() {
   const [attachedFiles, setAttachedFiles] = useState<Array<{ file: File; preview?: string; type: string; name: string }>>([]);
   const [remainingMessages, setRemainingMessages] = useState(0); // Initialize to 0 to avoid hydration mismatch
   const [showLimitModal, setShowLimitModal] = useState(false);
+  const [deepWebSearch, setDeepWebSearch] = useState(false);
   // Initialize cost data to avoid hydration mismatch
   const [costData, setCostData] = useState<CostData>({ 
     session: 0, 
@@ -194,21 +195,23 @@ export default function ChatInterface() {
     loadAvailableProviders();
     loadConversations();
     
-    // Load saved settings
-    if (typeof window !== 'undefined') {
-      const savedModel = localStorage.getItem('defaultModel');
-      const savedRAG = localStorage.getItem('useRAG');
-      const savedMode = localStorage.getItem('chatMode') as 'primary' | 'coding' | null;
-      if (savedModel) setUserOverride(savedModel);
-      if (savedRAG !== null) setUseRAG(savedRAG === 'true');
-      if (savedMode) setMode(savedMode);
-      
-      // Check initial message limit
-      setRemainingMessages(getRemainingMessages());
-      if (!canSendMessage()) {
-        setShowLimitModal(true);
+      // Load saved settings
+      if (typeof window !== 'undefined') {
+        const savedModel = localStorage.getItem('defaultModel');
+        const savedRAG = localStorage.getItem('useRAG');
+        const savedMode = localStorage.getItem('chatMode') as 'primary' | 'coding' | null;
+        const savedDeepWebSearch = localStorage.getItem('deepWebSearch');
+        if (savedModel) setUserOverride(savedModel);
+        if (savedRAG !== null) setUseRAG(savedRAG === 'true');
+        if (savedMode) setMode(savedMode);
+        if (savedDeepWebSearch !== null) setDeepWebSearch(savedDeepWebSearch === 'true');
+        
+        // Check initial message limit
+        setRemainingMessages(getRemainingMessages());
+        if (!canSendMessage()) {
+          setShowLimitModal(true);
+        }
       }
-    }
   }, []);
 
   // Load conversations list
@@ -611,6 +614,7 @@ export default function ChatInterface() {
           useRAG,
           userOverride: userOverride || undefined,
           mode, // Pass mode to API
+          deepWebSearch, // Pass deep web search flag
           personalInfoContext, // Include personal info context
           memoryContext, // Include persistent memory context
         }),
@@ -866,15 +870,22 @@ export default function ChatInterface() {
 
   // Get current model display name
   const getCurrentModelDisplay = (): string => {
-    if (messages.length === 0) return 'Llama 3.3 70B';
-    const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
-    if (lastAssistant?.metadata?.model) {
-      const model = lastAssistant.metadata.model;
-      if (model.includes('70b') || model.includes('70B')) return 'Llama 3.3 70B';
-      if (model.includes('8b') || model.includes('8B')) return 'Llama 3.1 8B';
-      return model;
+    if (!userOverride) {
+      return 'Auto-select';
     }
-    return 'Llama 3.3 70B';
+    const selectedOption = modelOptions.find(opt => opt.value === userOverride);
+    return selectedOption ? selectedOption.label : 'Auto-select';
+  };
+
+  // Get provider color for current model
+  const getCurrentModelColor = (): string => {
+    if (!userOverride) return 'text-gray-400';
+    const provider = userOverride.split('/')[0];
+    if (provider === 'groq') return 'text-green-400';
+    if (provider === 'kimi') return 'text-blue-400';
+    if (provider === 'anthropic') return 'text-purple-400';
+    if (provider === 'perplexity') return 'text-orange-400';
+    return 'text-gray-400';
   };
 
   return (
@@ -1100,6 +1111,32 @@ export default function ChatInterface() {
               </span>
             )}
           </div>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors">
+              <input
+                type="checkbox"
+                checked={deepWebSearch}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setDeepWebSearch(checked);
+                  localStorage.setItem('deepWebSearch', String(checked));
+                  if (checked) {
+                    toast.success('Deep web search enabled - Perplexity will be used for web/research queries', { duration: 3000 });
+                  } else {
+                    toast.success('Deep web search disabled', { duration: 2000 });
+                  }
+                }}
+                className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-orange-500 focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-gray-800 cursor-pointer"
+                title="Enable deep web search using Perplexity for web scraping and research queries"
+              />
+              <span className="flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-orange-400" />
+                <span className={deepWebSearch ? 'text-orange-400 font-medium' : ''}>
+                  Activate Deep Web Search
+                </span>
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Messages */}
@@ -1235,6 +1272,7 @@ export default function ChatInterface() {
                               useRAG,
                               userOverride: userOverride || undefined,
                               mode,
+                              deepWebSearch, // Include deep web search flag
                               personalInfoContext, // Include personal info context
                               memoryContext, // Include persistent memory context
                             }),
@@ -1324,6 +1362,77 @@ export default function ChatInterface() {
         {/* Input Area */}
         <div className="bg-gray-800 border-t border-gray-700 p-4">
           <div className="max-w-4xl mx-auto">
+            {/* Model Selector */}
+            <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs text-gray-400 flex items-center gap-1">
+                  <Brain className="w-3.5 h-3.5" />
+                  Model:
+                </label>
+                <div className="relative">
+                  <select
+                    value={userOverride}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      const provider = newValue.split('/')[0];
+                      
+                      // Warn if trying to use non-vision model with images
+                      if (selectedImages.length > 0 && (provider === 'groq' || provider === 'perplexity')) {
+                        toast.error('Groq and Perplexity do not support images. Auto-selecting a vision-capable model.');
+                        // Auto-select a vision-capable model
+                        const visionModel = modelOptions.find(opt => 
+                          opt.value.startsWith('kimi/') || opt.value.startsWith('anthropic/')
+                        );
+                        if (visionModel) {
+                          setUserOverride(visionModel.value);
+                          localStorage.setItem('defaultModel', visionModel.value);
+                          toast.success(`Switched to ${visionModel.label} (supports images)`);
+                          return;
+                        }
+                      }
+                      
+                      setUserOverride(newValue);
+                      localStorage.setItem('defaultModel', newValue);
+                      const selectedLabel = modelOptions.find(opt => opt.value === newValue)?.label || 'Auto-select';
+                      toast.success(`Switched to ${selectedLabel}`, { duration: 2000 });
+                    }}
+                    className={`appearance-none px-3 py-1.5 pr-8 text-xs font-medium rounded-lg border border-gray-600 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors cursor-pointer ${getCurrentModelColor()}`}
+                    title={selectedImages.length > 0 ? "Select a vision-capable model (Kimi or Claude) for image analysis" : "Select AI model for this conversation"}
+                  >
+                    {modelOptions.map((opt) => {
+                      const optProvider = opt.value.split('/')[0];
+                      const supportsVision = optProvider === 'kimi' || optProvider === 'anthropic' || opt.value === '';
+                      const isDisabled = selectedImages.length > 0 && !supportsVision && opt.value !== '';
+                      
+                      return (
+                        <option 
+                          key={opt.value} 
+                          value={opt.value} 
+                          className="bg-gray-700 text-white"
+                          disabled={isDisabled}
+                        >
+                          {opt.label}{selectedImages.length > 0 && !supportsVision && opt.value !== '' ? ' (no vision)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                </div>
+                {selectedImages.length > 0 && userOverride && !userOverride.startsWith('kimi/') && !userOverride.startsWith('anthropic/') && userOverride !== '' && (
+                  <span className="text-xs text-orange-400 flex items-center gap-1 px-2 py-0.5 bg-orange-400/10 rounded">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    Switch to Kimi/Claude for images
+                  </span>
+                )}
+              </div>
+              {selectedImages.length > 0 && (
+                <span className="text-xs text-orange-400 flex items-center gap-1">
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  {selectedImages.length} image{selectedImages.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            
             {/* Image and file previews */}
             {(selectedImages.length > 0 || attachedFiles.length > 0) && (
               <div className="mb-3 space-y-2">

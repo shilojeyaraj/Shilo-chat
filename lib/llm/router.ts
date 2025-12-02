@@ -244,6 +244,7 @@ export async function routeRequest(
     fileCount?: number;
     userOverride?: string; // Manual model selection
     mode?: 'primary' | 'coding'; // Chat mode
+    deepWebSearch?: boolean; // Force Perplexity for web search/research
   } = {}
 ): Promise<{ config: ModelConfig; taskType: TaskType }> {
   // Extract text from last message (handle multimodal content)
@@ -297,13 +298,44 @@ export async function routeRequest(
     }
   }
 
-  const taskType = await classifyTask(
+  let taskType = await classifyTask(
     lastMessage,
     context.hasImages,
     context.hasCode,
     context.fileCount || 0,
     messages.length
   );
+
+  // If deep web search is enabled, force web_search or deep_research to use Perplexity
+  if (context.deepWebSearch) {
+    const searchKeywords = [
+      'search', 'look up', 'find', 'latest', 'current', 'news', 'today',
+      'what is happening', 'recent', 'update', 'price of', 'weather', 'stock',
+      'trending', 'happening now', 'research', 'comprehensive', 'detailed analysis',
+      'deep dive', 'in-depth', 'investigate', 'study', 'examine', 'explore'
+    ];
+    const isSearchOrResearch = searchKeywords.some(kw => lastMessage.toLowerCase().includes(kw)) ||
+                               taskType === 'web_search' || taskType === 'deep_research';
+    
+    if (isSearchOrResearch) {
+      // Force Perplexity for web search/research when deep web search is enabled
+      const available = getAvailableProviders();
+      if (available.perplexity) {
+        return {
+          config: {
+            provider: 'perplexity',
+            model: 'llama-3.1-sonar-large-128k-online',
+            maxTokens: 8192,
+            temperature: 0.3,
+            costPer1M: 5,
+          },
+          taskType: taskType === 'deep_research' ? 'deep_research' : 'web_search',
+        };
+      } else {
+        console.warn('Deep web search enabled but Perplexity API key not available');
+      }
+    }
+  }
 
   // CRITICAL: If images are present, MUST use vision-capable model
   // Groq and Perplexity do NOT support images

@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
       userOverride,
       useRAG = false,
       mode = 'primary', // 'primary' or 'coding'
+      deepWebSearch = false, // Force Perplexity for web search/research
     } = body;
 
     // Extract text content from last message (handle multimodal)
@@ -169,6 +170,7 @@ export async function POST(req: NextRequest) {
       fileCount: files.length,
       userOverride,
       mode, // Pass mode to router
+      deepWebSearch, // Pass deep web search flag
     });
 
     // Step 5: Optimize conversation context (hot-warm-cold)
