@@ -879,24 +879,24 @@ export default function ChatInterface() {
 
   // Get provider color for current model
   const getCurrentModelColor = (): string => {
-    if (!userOverride) return 'text-gray-400';
+    if (!userOverride) return 'text-slate-400';
     const provider = userOverride.split('/')[0];
-    if (provider === 'groq') return 'text-green-400';
+    if (provider === 'groq') return 'text-emerald-400';
     if (provider === 'kimi') return 'text-blue-400';
     if (provider === 'anthropic') return 'text-purple-400';
     if (provider === 'perplexity') return 'text-orange-400';
-    return 'text-gray-400';
+    return 'text-slate-400';
   };
 
   return (
-    <div className="flex h-screen bg-gray-900 text-white">
+    <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
       {/* Left Sidebar */}
-      <div className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
+      <div className="w-64 bg-slate-900/80 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl">
         {/* New Chat Button */}
-        <div className="p-4 border-b border-gray-700">
+        <div className="p-4 border-b border-slate-800/50">
           <button
             onClick={handleNewConversation}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors font-medium"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:via-purple-500 hover:to-indigo-500 rounded-xl transition-all duration-300 font-medium shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:scale-[1.02] active:scale-[0.98]"
           >
             <Plus className="w-4 h-4" />
             New Chat
@@ -905,7 +905,7 @@ export default function ChatInterface() {
 
         {/* Recent Conversations */}
         <div className="flex-1 overflow-y-auto p-4">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 px-2">
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">
             RECENT
           </h2>
           {conversations.length > 0 && (
@@ -915,19 +915,19 @@ export default function ChatInterface() {
                 placeholder="Search conversations..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-2 py-1.5 text-sm bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm bg-slate-800/50 text-white rounded-xl border border-slate-700/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all duration-200 placeholder:text-slate-500"
               />
             </div>
           )}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {(searchQuery ? filteredConversations : conversations.slice(0, 10)).map((conv) => (
               <div
                 key={conv.conversationId}
                 className={`
-                  group px-3 py-2.5 rounded-lg transition-colors
+                  group px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer
                   ${currentConversationId === conv.conversationId
-                    ? 'bg-gray-700'
-                    : 'hover:bg-gray-700/50'
+                    ? 'bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 shadow-lg shadow-indigo-500/10'
+                    : 'hover:bg-slate-800/50 border border-transparent hover:border-slate-700/50'
                   }
                 `}
               >
@@ -955,7 +955,7 @@ export default function ChatInterface() {
                         }
                       }}
                       autoFocus
-                      className="flex-1 px-2 py-1 text-sm bg-gray-600 text-white rounded border border-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="flex-1 px-2 py-1 text-sm bg-slate-800/80 text-white rounded-lg border border-slate-700/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all duration-200"
                     />
                   </div>
                 ) : (
@@ -967,24 +967,24 @@ export default function ChatInterface() {
                       <div className="text-sm font-medium text-white truncate mb-1">
                         {conv.title}
                       </div>
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-slate-400">
                         {formatConversationTime(conv.updatedAt)}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
                       <button
                         onClick={(e) => handleStartEditTitle(conv, e)}
-                        className="p-1 text-gray-400 hover:text-blue-400 transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all duration-200"
                         title="Edit title"
                       >
-                        <Edit2 className="w-3 h-3" />
+                        <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={(e) => handleDeleteConversation(conv.conversationId, e)}
-                        className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
                         title="Delete conversation"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </>
@@ -992,7 +992,7 @@ export default function ChatInterface() {
               </div>
             ))}
             {conversations.length === 0 && (
-              <div className="text-xs text-gray-500 text-center py-4">
+              <div className="text-xs text-slate-500 text-center py-4">
                 No conversations yet
               </div>
             )}
@@ -1000,7 +1000,7 @@ export default function ChatInterface() {
         </div>
 
         {/* Actions */}
-        <div className="p-4 border-t border-gray-700 space-y-2">
+        <div className="p-4 border-t border-slate-800/50 space-y-1.5">
           <button 
             onClick={() => {
               if (messages.length === 0) {
@@ -1020,31 +1020,31 @@ export default function ChatInterface() {
               URL.revokeObjectURL(url);
               toast.success('Conversation exported');
             }}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full"
+            className="flex items-center gap-2.5 text-sm text-slate-300 hover:text-white hover:bg-slate-800/50 px-3 py-2 rounded-xl transition-all duration-200 w-full group"
             disabled={messages.length === 0}
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
             Export Chat
           </button>
           <button 
             onClick={() => setShowPersonalInfo(true)}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full"
+            className="flex items-center gap-2.5 text-sm text-slate-300 hover:text-white hover:bg-slate-800/50 px-3 py-2 rounded-xl transition-all duration-200 w-full group"
           >
-            <User className="w-4 h-4" />
+            <User className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
             Personal Info
           </button>
           <button 
             onClick={() => setShowResumeCustomizer(true)}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full"
+            className="flex items-center gap-2.5 text-sm text-slate-300 hover:text-white hover:bg-slate-800/50 px-3 py-2 rounded-xl transition-all duration-200 w-full group"
           >
-            <FileText className="w-4 h-4" />
+            <FileText className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
             Resume Customizer
           </button>
           <button 
             onClick={() => setShowSettings(true)}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full"
+            className="flex items-center gap-2.5 text-sm text-slate-300 hover:text-white hover:bg-slate-800/50 px-3 py-2 rounded-xl transition-all duration-200 w-full group"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
             Settings
           </button>
         </div>
@@ -1053,17 +1053,17 @@ export default function ChatInterface() {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Mode Tabs */}
-        <div className="bg-gray-800 border-b border-gray-700">
-          <div className="flex items-center gap-1 px-6 py-2">
+        <div className="bg-slate-900/60 backdrop-blur-xl border-b border-slate-800/50">
+          <div className="flex items-center gap-2 px-6 py-3">
             <button
               onClick={() => {
                 setMode('primary');
                 localStorage.setItem('chatMode', 'primary');
               }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
                 mode === 'primary'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
             >
               Primary
@@ -1073,10 +1073,10 @@ export default function ChatInterface() {
                 setMode('coding');
                 localStorage.setItem('chatMode', 'coding');
               }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
                 mode === 'coding'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
             >
               <Code className="w-4 h-4 inline mr-1.5" />
@@ -1086,33 +1086,35 @@ export default function ChatInterface() {
         </div>
 
         {/* Header */}
-        <div className="bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-white">Shilo Chat</h1>
+        <div className="bg-slate-900/40 backdrop-blur-xl border-b border-slate-800/50 px-6 py-4 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">
+              Shilo Chat
+            </h1>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-slate-400">
                 {getCurrentModelDisplay()} • ${costData.session.toFixed(2)}/1K tokens
               </span>
               {remainingMessages !== Infinity && (
-                <span className={`text-xs px-2 py-1 rounded ${
+                <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${
                   remainingMessages <= 5 
-                    ? 'bg-red-600/20 text-red-400' 
+                    ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
                     : remainingMessages <= 10
-                    ? 'bg-yellow-600/20 text-yellow-400'
-                    : 'bg-green-600/20 text-green-400'
+                    ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
+                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                 }`}>
                   {remainingMessages} messages left today
                 </span>
               )}
             </div>
             {mode === 'coding' && (
-              <span className="text-xs px-2 py-1 bg-green-600/20 text-green-400 rounded">
+              <span className="text-xs px-3 py-1.5 bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30 font-medium">
                 Multi-Agent Mode
               </span>
             )}
           </div>
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white transition-colors">
+            <label className="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer hover:text-white transition-all duration-200 px-3 py-2 rounded-xl hover:bg-slate-800/50 group">
               <input
                 type="checkbox"
                 checked={deepWebSearch}
@@ -1126,11 +1128,11 @@ export default function ChatInterface() {
                     toast.success('Deep web search disabled', { duration: 2000 });
                   }
                 }}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-orange-500 focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-gray-800 cursor-pointer"
+                className="w-4 h-4 rounded-lg border-slate-600 bg-slate-800/50 text-orange-500 focus:ring-2 focus:ring-orange-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 cursor-pointer transition-all duration-200 group-hover:border-orange-400"
                 title="Enable deep web search using Perplexity for web scraping and research queries"
               />
               <span className="flex items-center gap-1.5">
-                <Globe className="w-4 h-4 text-orange-400" />
+                <Globe className={`w-4 h-4 transition-colors duration-200 ${deepWebSearch ? 'text-orange-400' : 'text-slate-400'}`} />
                 <span className={deepWebSearch ? 'text-orange-400 font-medium' : ''}>
                   Activate Deep Web Search
                 </span>
@@ -1140,25 +1142,25 @@ export default function ChatInterface() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-900">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center max-w-md">
                 <div className="text-4xl mb-4">
                   {mode === 'coding' ? '💻' : '👋'}
                 </div>
-                <p className="text-xl text-gray-300 mb-2">
+                <p className="text-xl text-slate-200 mb-2 font-medium">
                   {mode === 'coding' 
                     ? 'Coding Mode Active' 
                     : 'Hey! Welcome to Shilo Chat.'}
                 </p>
-                <p className="text-gray-400 mb-4">
+                <p className="text-slate-400 mb-4">
                   {mode === 'coding'
                     ? 'I\'m your expert coding assistant. I can help with code generation, refactoring, debugging, architecture design, and more. I use multi-agent workflows and follow best practices from top coding tools.'
                     : 'How can I help you today?'}
                 </p>
                 {mode === 'coding' && (
-                  <div className="text-sm text-gray-500 space-y-1 mt-4">
+                  <div className="text-sm text-slate-500 space-y-1 mt-4">
                     <p>• Production-ready code with error handling</p>
                     <p>• Multi-file architecture design</p>
                     <p>• Code review and optimization</p>
@@ -1176,10 +1178,10 @@ export default function ChatInterface() {
             >
               <div className="max-w-2xl relative">
                 <div
-                  className={`rounded-2xl px-4 py-3 ${
+                  className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-200 ${
                     message.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-800 text-gray-100'
+                      ? 'bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-600 text-white'
+                      : 'bg-slate-800/80 backdrop-blur-sm text-slate-100 border border-slate-700/50'
                   }`}
                 >
                   {/* Display images */}
@@ -1321,7 +1323,7 @@ export default function ChatInterface() {
                           setIsLoading(false);
                         }
                       }}
-                      className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-gray-300 transition-colors"
+                      className="p-2 hover:bg-slate-800/50 rounded-xl text-slate-400 hover:text-indigo-400 transition-all duration-200 hover:scale-110"
                       title="Regenerate response"
                       disabled={isLoading}
                     >
@@ -1333,13 +1335,13 @@ export default function ChatInterface() {
                       setMessages(prev => prev.filter((_, i) => i !== msgIndex));
                       toast.success('Message deleted');
                     }}
-                    className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
+                    className="p-2 hover:bg-slate-800/50 rounded-xl text-slate-400 hover:text-red-400 transition-all duration-200 hover:scale-110"
                     title="Delete message"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                   {message.timestamp && (
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-slate-500">
                       {formatMessageTime(message.timestamp)}
                     </span>
                   )}
@@ -1350,8 +1352,8 @@ export default function ChatInterface() {
 
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-800 rounded-2xl px-4 py-3">
-                <Loader2 className="w-5 h-5 animate-spin text-blue-400" />
+              <div className="bg-slate-800/80 backdrop-blur-sm rounded-2xl px-5 py-4 border border-slate-700/50 shadow-lg">
+                <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
               </div>
             </div>
           )}
@@ -1360,12 +1362,12 @@ export default function ChatInterface() {
         </div>
 
         {/* Input Area */}
-        <div className="bg-gray-800 border-t border-gray-700 p-4">
+        <div className="bg-slate-900/60 backdrop-blur-xl border-t border-slate-800/50 p-4 shadow-2xl">
           <div className="max-w-4xl mx-auto">
             {/* Model Selector */}
             <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <label className="text-xs text-gray-400 flex items-center gap-1">
+                <label className="text-xs text-slate-400 flex items-center gap-1.5">
                   <Brain className="w-3.5 h-3.5" />
                   Model:
                 </label>
@@ -1396,7 +1398,7 @@ export default function ChatInterface() {
                       const selectedLabel = modelOptions.find(opt => opt.value === newValue)?.label || 'Auto-select';
                       toast.success(`Switched to ${selectedLabel}`, { duration: 2000 });
                     }}
-                    className={`appearance-none px-3 py-1.5 pr-8 text-xs font-medium rounded-lg border border-gray-600 bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors cursor-pointer ${getCurrentModelColor()}`}
+                    className={`appearance-none px-3 py-2 pr-8 text-xs font-medium rounded-xl border border-slate-700/50 bg-slate-800/50 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all duration-200 cursor-pointer ${getCurrentModelColor()}`}
                     title={selectedImages.length > 0 ? "Select a vision-capable model (Kimi or Claude) for image analysis" : "Select AI model for this conversation"}
                   >
                     {modelOptions.map((opt) => {
@@ -1408,7 +1410,7 @@ export default function ChatInterface() {
                         <option 
                           key={opt.value} 
                           value={opt.value} 
-                          className="bg-gray-700 text-white"
+                          className="bg-slate-800 text-white"
                           disabled={isDisabled}
                         >
                           {opt.label}{selectedImages.length > 0 && !supportsVision && opt.value !== '' ? ' (no vision)' : ''}
@@ -1416,17 +1418,17 @@ export default function ChatInterface() {
                       );
                     })}
                   </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                 </div>
                 {selectedImages.length > 0 && userOverride && !userOverride.startsWith('kimi/') && !userOverride.startsWith('anthropic/') && userOverride !== '' && (
-                  <span className="text-xs text-orange-400 flex items-center gap-1 px-2 py-0.5 bg-orange-400/10 rounded">
+                  <span className="text-xs text-orange-400 flex items-center gap-1.5 px-2.5 py-1 bg-orange-500/10 rounded-lg border border-orange-500/20">
                     <ImageIcon className="w-3.5 h-3.5" />
                     Switch to Kimi/Claude for images
                   </span>
                 )}
               </div>
               {selectedImages.length > 0 && (
-                <span className="text-xs text-orange-400 flex items-center gap-1">
+                <span className="text-xs text-orange-400 flex items-center gap-1.5 px-2.5 py-1 bg-orange-500/10 rounded-lg border border-orange-500/20">
                   <ImageIcon className="w-3.5 h-3.5" />
                   {selectedImages.length} image{selectedImages.length > 1 ? 's' : ''}
                 </span>
@@ -1444,13 +1446,13 @@ export default function ChatInterface() {
                         <img
                           src={img}
                           alt={`Preview ${idx + 1}`}
-                          className="w-20 h-20 object-cover rounded-lg border border-gray-600"
+                          className="w-20 h-20 object-cover rounded-xl border-2 border-slate-700/50 shadow-lg transition-all duration-200 group-hover:border-indigo-500/50 group-hover:scale-105"
                         />
                         <button
                           onClick={() => removeImage(idx)}
-                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg hover:scale-110"
                         >
-                          <X className="w-4 h-4 text-white" />
+                          <X className="w-3.5 h-3.5 text-white" />
                         </button>
                       </div>
                     ))}
@@ -1462,7 +1464,7 @@ export default function ChatInterface() {
                     {attachedFiles.map((fileObj, idx) => (
                       <div
                         key={`file-${idx}`}
-                        className="relative group flex items-center gap-2 px-3 py-2 bg-gray-700 rounded-lg border border-gray-600"
+                        className="relative group flex items-center gap-2 px-3 py-2 bg-slate-800/50 rounded-xl border border-slate-700/50 hover:border-indigo-500/50 transition-all duration-200"
                       >
                         <span className="text-lg">{getFileIcon(fileObj.type, fileObj.name)}</span>
                         <div className="flex-1 min-w-0">
@@ -1475,7 +1477,7 @@ export default function ChatInterface() {
                         </div>
                         <button
                           onClick={() => removeFile(idx)}
-                          className="w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          className="w-5 h-5 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 flex-shrink-0 shadow-lg hover:scale-110"
                         >
                           <X className="w-3 h-3 text-white" />
                         </button>
@@ -1494,11 +1496,11 @@ export default function ChatInterface() {
                   onKeyDown={handleKeyPress}
                   onPaste={handleImagePaste}
                   placeholder="Type your message... (Attach files with 📎 or images with 📷)"
-                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-600 placeholder-gray-400 transition-all"
+                  className="w-full px-4 py-3.5 bg-slate-800/50 text-white rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 border border-slate-700/50 placeholder:text-slate-500 transition-all duration-200 shadow-lg backdrop-blur-sm"
                   rows={1}
                   disabled={isLoading}
                   style={{ 
-                    minHeight: '48px', 
+                    minHeight: '52px', 
                     maxHeight: '33vh',
                     overflowY: 'auto'
                   }}
@@ -1515,10 +1517,10 @@ export default function ChatInterface() {
               />
               <label
                 htmlFor="image-upload"
-                className="w-12 h-12 bg-gray-700 hover:bg-gray-600 rounded-full flex items-center justify-center transition-colors flex-shrink-0 cursor-pointer"
+                className="w-12 h-12 bg-slate-800/50 hover:bg-slate-700/50 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 cursor-pointer border border-slate-700/50 hover:border-indigo-500/50 hover:scale-105 shadow-lg"
                 title="Upload images"
               >
-                <ImageIcon className="w-5 h-5 text-gray-300" />
+                <ImageIcon className="w-5 h-5 text-slate-300 hover:text-indigo-400 transition-colors" />
               </label>
               
               {/* File attachment */}
@@ -1532,16 +1534,16 @@ export default function ChatInterface() {
               />
               <label
                 htmlFor="file-upload"
-                className="w-12 h-12 bg-gray-700 hover:bg-gray-600 rounded-full flex items-center justify-center transition-colors flex-shrink-0 cursor-pointer"
+                className="w-12 h-12 bg-slate-800/50 hover:bg-slate-700/50 rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 cursor-pointer border border-slate-700/50 hover:border-indigo-500/50 hover:scale-105 shadow-lg"
                 title="Attach files (PDF, images, text, etc.)"
               >
-                <Paperclip className="w-5 h-5 text-gray-300" />
+                <Paperclip className="w-5 h-5 text-slate-300 hover:text-indigo-400 transition-colors" />
               </label>
               
               <button
                 onClick={handleSend}
                 disabled={isLoading || (!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || !canSendMessage()}
-                className="w-12 h-12 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-full flex items-center justify-center transition-colors flex-shrink-0"
+                className="w-12 h-12 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:via-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 disabled:hover:scale-100"
                 title={!canSendMessage() ? 'Daily limit reached. Upgrade to continue.' : 'Send message'}
               >
                 {isLoading ? (
@@ -1551,7 +1553,7 @@ export default function ChatInterface() {
                 )}
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2 text-center">
+            <p className="text-xs text-slate-500 mt-2 text-center">
               Free to use • No API key required
             </p>
           </div>
