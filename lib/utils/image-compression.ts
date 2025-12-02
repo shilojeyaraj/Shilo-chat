@@ -11,10 +11,10 @@ export interface CompressionOptions {
 }
 
 const DEFAULT_OPTIONS: CompressionOptions = {
-  maxWidth: 2048, // Max width for vision models (OpenAI recommends 2048px)
-  maxHeight: 2048, // Max height
-  quality: 0.85, // Good quality with size reduction
-  maxSizeKB: 500, // Target: 500KB per image (reduces from potentially 5MB+)
+  maxWidth: 1024, // Reduced from 2048 to save tokens (73% reduction in image tokens)
+  maxHeight: 1024, // Reduced from 2048 to save tokens
+  quality: 0.75, // Reduced from 0.85 to save more space (still good quality)
+  maxSizeKB: 300, // Reduced from 500KB to save tokens (40% reduction)
 };
 
 /**

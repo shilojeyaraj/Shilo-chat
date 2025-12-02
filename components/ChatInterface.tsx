@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import PdfUpload from './PdfUpload';
 import PersonalInfoManager from './PersonalInfo';
 import ResumeCustomizer from './ResumeCustomizer';
+import FundingErrorModal from './FundingErrorModal';
 import { 
   createConversation, 
   saveMessage, 
@@ -108,6 +109,7 @@ export default function ChatInterface() {
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [mode, setMode] = useState<'primary' | 'coding'>('primary');
+  const [showFundingError, setShowFundingError] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ file: File; preview?: string; type: string; name: string }>>([]);
   const [remainingMessages, setRemainingMessages] = useState(0); // Initialize to 0 to avoid hydration mismatch
   const [showLimitModal, setShowLimitModal] = useState(false);
@@ -804,8 +806,15 @@ export default function ChatInterface() {
     } catch (error: any) {
       console.error('Chat error:', error);
       
+      // Check if it's a Claude funding error
+      if (error.isFundingError || error.message?.toLowerCase().includes('funding') || 
+          error.message?.toLowerCase().includes('insufficient quota') ||
+          error.message?.toLowerCase().includes('payment required')) {
+        setShowFundingError(true);
+        toast.error('Claude funding depleted. Please reload your account.', { duration: 6000 });
+      } 
       // Check if it's a provider availability error
-      if (error.message?.includes('not configured')) {
+      else if (error.message?.includes('not configured')) {
         toast.error(
           error.message || 'A required API key is missing. Please check your .env.local file.',
           { duration: 5000 }
@@ -1737,12 +1746,18 @@ export default function ChatInterface() {
                         Close
                       </button>
                     )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+          </div>
+        </div>
+      </div>
+
+      {/* Funding Error Modal */}
+      <FundingErrorModal 
+        isOpen={showFundingError} 
+        onClose={() => setShowFundingError(false)} 
+      />
+    </div>
+  );
+})()}
 
         {/* Settings Modal */}
         {showSettings && (

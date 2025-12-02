@@ -87,11 +87,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   vision: {
-    provider: 'anthropic', // Claude 3.5 Sonnet for vision/image analysis
-    model: 'claude-3-5-sonnet-20240620', // Correct Claude 3.5 Sonnet model
-    maxTokens: 8192,
+    provider: 'anthropic', // Claude 3.5 Haiku for vision (73% cheaper than Sonnet)
+    model: 'claude-3-5-haiku-20241022', // Claude Haiku - much cheaper for vision
+    maxTokens: 4096, // Reduced to save on output costs
     temperature: 0.7,
-    costPer1M: 3,
+    costPer1M: 0.8, // Haiku: $0.80/1M input, $4/1M output (vs Sonnet $3/$15)
   },
   general: {
     provider: 'kimi',
@@ -184,10 +184,10 @@ function getFallbackConfig(
     },
     anthropic: {
       provider: 'anthropic',
-      model: 'claude-3-5-sonnet-20240620',
+      model: 'claude-3-5-haiku-20241022', // Use Haiku for cost savings (73% cheaper)
       maxTokens: 4096,
       temperature: 0.7,
-      costPer1M: 3,
+      costPer1M: 0.8, // Haiku: $0.80/1M input, $4/1M output
     },
     openai: {
       provider: 'openai',
@@ -285,16 +285,16 @@ export async function routeRequest(
     // Only Claude and OpenAI support vision
     if ((context.hasImages || (context.fileCount && context.fileCount > 0)) && 
         (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi' || overrideProvider === 'gemini')) {
-      // Auto-switch to Claude (preferred) or OpenAI for vision
-      console.log(`Auto-switching from ${overrideProvider} to Claude for image/file processing`);
+      // Auto-switch to Claude Haiku (cheapest) or OpenAI for vision
+      console.log(`Auto-switching from ${overrideProvider} to Claude Haiku for image/file processing (cost-optimized)`);
       if (available.anthropic) {
         return {
           config: {
             provider: 'anthropic',
-            model: 'claude-3-5-sonnet-20240620', // Correct Claude 3.5 Sonnet model
-            maxTokens: 8192,
+            model: 'claude-3-5-haiku-20241022', // Claude Haiku - 73% cheaper than Sonnet
+            maxTokens: 4096, // Reduced to save on output costs
             temperature: 0.7,
-            costPer1M: 3,
+            costPer1M: 0.8, // Haiku pricing
           },
           taskType: context.hasImages ? 'vision' : 'long_context',
         };

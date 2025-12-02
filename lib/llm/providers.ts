@@ -1058,15 +1058,33 @@ const anthropicProvider: LLMProvider = {
     if (!response.ok) {
       const errorText = await response.text();
       let errorMessage = `Anthropic API error (${response.status}): ${response.statusText}`;
+      let isFundingError = false;
       try {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.error?.message || errorJson.message || errorText;
         console.error('Anthropic API Error Details:', errorJson);
+        
+        // Detect funding/quota errors
+        const errorType = errorJson.error?.type || errorJson.type || '';
+        const errorMsg = (errorMessage || '').toLowerCase();
+        isFundingError = 
+          errorType === 'insufficient_quota' ||
+          errorType === 'payment_required' ||
+          errorMsg.includes('insufficient quota') ||
+          errorMsg.includes('payment required') ||
+          errorMsg.includes('funding') ||
+          errorMsg.includes('credit') ||
+          errorMsg.includes('balance') ||
+          response.status === 402 || // Payment Required
+          response.status === 429; // Rate limit (could also be quota)
       } catch {
         errorMessage = errorText || response.statusText;
         console.error('Anthropic API Error (raw):', errorText);
       }
-      throw new Error(errorMessage);
+      
+      const error = new Error(errorMessage);
+      (error as any).isFundingError = isFundingError;
+      throw error;
     }
 
     const data = await response.json();
@@ -1183,15 +1201,33 @@ const anthropicProvider: LLMProvider = {
     if (!response.ok) {
       const errorText = await response.text();
       let errorMessage = `Anthropic API error (${response.status}): ${response.statusText}`;
+      let isFundingError = false;
       try {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.error?.message || errorJson.message || errorText;
         console.error('Anthropic API Error Details:', errorJson);
+        
+        // Detect funding/quota errors
+        const errorType = errorJson.error?.type || errorJson.type || '';
+        const errorMsg = (errorMessage || '').toLowerCase();
+        isFundingError = 
+          errorType === 'insufficient_quota' ||
+          errorType === 'payment_required' ||
+          errorMsg.includes('insufficient quota') ||
+          errorMsg.includes('payment required') ||
+          errorMsg.includes('funding') ||
+          errorMsg.includes('credit') ||
+          errorMsg.includes('balance') ||
+          response.status === 402 || // Payment Required
+          response.status === 429; // Rate limit (could also be quota)
       } catch {
         errorMessage = errorText || response.statusText;
         console.error('Anthropic API Error (raw):', errorText);
       }
-      throw new Error(errorMessage);
+      
+      const error = new Error(errorMessage);
+      (error as any).isFundingError = isFundingError;
+      throw error;
     }
 
     const reader = response.body?.getReader();
