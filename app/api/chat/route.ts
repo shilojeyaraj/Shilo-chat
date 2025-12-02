@@ -6,6 +6,8 @@ import { Message } from '@/lib/llm/types';
 import { searchRelevantChunks } from '@/lib/utils/search';
 import { getCodingPrompt } from '@/lib/prompts/coding-mode';
 import { buildOptimizedContext, ConversationMessage } from '@/lib/utils/conversation-manager';
+// Personal info is now fetched on client side and passed in the request body
+// Removed import since we no longer access IndexedDB from server
 
 /**
  * Enhanced system prompt based on task type and mode
@@ -14,7 +16,9 @@ function getSystemPrompt(
   taskType: string,
   mode: 'primary' | 'coding' = 'primary',
   ragContext?: any[],
-  toolResults?: Record<string, any>
+  toolResults?: Record<string, any>,
+  personalInfoContext?: string,
+  memoryContext?: string
 ): string {
   // Coding mode uses advanced prompts
   if (mode === 'coding') {
@@ -50,8 +54,26 @@ Be conversational, helpful, and concise. Match ChatGPT's tone and quality.`;
     basePrompt += JSON.stringify(toolResults, null, 2);
   }
 
+  // Add personal information context
+  if (personalInfoContext) {
+    basePrompt += personalInfoContext;
+  }
+
+  // Add memory context (persistent facts across conversations)
+  if (memoryContext) {
+    basePrompt += memoryContext;
+  }
+
   // Task-specific prompts
   switch (taskType) {
+    case 'deep_research':
+      basePrompt += '\n\nCRITICAL FOR DEEP RESEARCH:\n';
+      basePrompt += '- Conduct comprehensive, thorough research\n';
+      basePrompt += '- Use multiple sources and perspectives\n';
+      basePrompt += '- Provide detailed analysis with citations\n';
+      basePrompt += '- Include background context and related information\n';
+      basePrompt += '- Structure the response as a comprehensive report\n';
+      break;
     case 'code_generation':
       basePrompt += '\n\nCRITICAL FOR CODE GENERATION:\n';
       basePrompt += '- ALWAYS make code immediately runnable\n';
@@ -86,7 +108,18 @@ export async function POST(req: NextRequest) {
       mode = 'primary', // 'primary' or 'coding'
     } = body;
 
-    const lastMessage = messages[messages.length - 1]?.content || '';
+    // Extract text content from last message (handle multimodal)
+    const lastMessageObj = messages[messages.length - 1];
+    let lastMessage = '';
+    if (lastMessageObj?.content) {
+      if (typeof lastMessageObj.content === 'string') {
+        lastMessage = lastMessageObj.content;
+      } else if (Array.isArray(lastMessageObj.content)) {
+        // Extract text from multimodal content
+        const textPart = lastMessageObj.content.find((part: any) => part.type === 'text');
+        lastMessage = textPart?.text || '';
+      }
+    }
 
     // Step 1: Detect required tools
     const requiredTools = await detectRequiredTools(lastMessage, files);
@@ -121,6 +154,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Step 3.5: Get personal information from request (client-side provides it from IndexedDB)
+    // IndexedDB is only available in the browser, so the client fetches it and sends it here
+    const personalInfoContext = body.personalInfoContext || '';
+
+    // Step 3.6: Get persistent memory context (server-side can access IndexedDB via client)
+    // For now, we'll get it from the request body (client fetches and sends)
+    const memoryContext = body.memoryContext || '';
+
     // Step 4: Route to optimal model
     const { config, taskType } = await routeRequest(messages, {
       hasImages: files.some((f: any) => f.type?.startsWith('image/')),
@@ -145,7 +186,7 @@ export async function POST(req: NextRequest) {
     );
 
     // Step 6: Build enhanced messages with system prompt and handle images
-    const systemPrompt = getSystemPrompt(taskType, mode, ragContext, toolResults);
+    const systemPrompt = getSystemPrompt(taskType, mode, ragContext, toolResults, personalInfoContext, memoryContext);
     
     // Convert optimized messages to proper format with images
     // Filter out system messages from optimized (we add our own)
@@ -153,73 +194,75 @@ export async function POST(req: NextRequest) {
     
     const enhancedMessages: Message[] = [
       { role: 'system', content: systemPrompt },
-      ...userMessages.map((m: any) => {
-        // Skip compressed messages that are just placeholders
-        if (m.content && typeof m.content === 'string' && m.content.includes('[compressed]') && m.content.length < 50) {
-          // Skip very short compressed messages
-          return null;
-        }
-        
-        // If message has images, format for vision models
-        if (m.images && m.images.length > 0) {
-          const contentParts: any[] = [];
-          
-          // Add text content if present
-          if (m.content && typeof m.content === 'string' && m.content.trim()) {
-            contentParts.push({ type: 'text', text: m.content });
+      ...userMessages
+        .map((m: any): Message | null => {
+          // Skip compressed messages that are just placeholders
+          if (m.content && typeof m.content === 'string' && m.content.includes('[compressed]') && m.content.length < 50) {
+            // Skip very short compressed messages
+            return null;
           }
           
-          // Add images - ensure proper base64 data URL format
-          m.images.forEach((img: string) => {
-            if (img && img.trim()) {
-              // Ensure image is in proper data URL format
-              let imageUrl = img;
-              
-              // If it's not already a data URL, make it one
-              if (!imageUrl.startsWith('data:')) {
-                // Try to detect if it's base64 without prefix
-                if (!imageUrl.includes('://')) {
-                  // Assume PNG if no MIME type detected
-                  imageUrl = `data:image/png;base64,${imageUrl}`;
+          // If message has images, format for vision models
+          if (m.images && m.images.length > 0) {
+            const contentParts: any[] = [];
+            
+            // Add text content if present
+            if (m.content && typeof m.content === 'string' && m.content.trim()) {
+              contentParts.push({ type: 'text', text: m.content });
+            }
+            
+            // Add images - ensure proper base64 data URL format
+            m.images.forEach((img: string) => {
+              if (img && img.trim()) {
+                // Ensure image is in proper data URL format
+                let imageUrl = img;
+                
+                // If it's not already a data URL, make it one
+                if (!imageUrl.startsWith('data:')) {
+                  // Try to detect if it's base64 without prefix
+                  if (!imageUrl.includes('://')) {
+                    // Assume PNG if no MIME type detected
+                    imageUrl = `data:image/png;base64,${imageUrl}`;
+                  }
+                }
+                
+                // Validate the format
+                if (imageUrl.startsWith('data:image/')) {
+                  contentParts.push({
+                    type: 'image_url',
+                    image_url: {
+                      url: imageUrl,
+                    },
+                  });
+                } else {
+                  console.warn('Invalid image format, skipping:', imageUrl.substring(0, 50));
                 }
               }
-              
-              // Validate the format
-              if (imageUrl.startsWith('data:image/')) {
-                contentParts.push({
-                  type: 'image_url',
-                  image_url: {
-                    url: imageUrl,
-                  },
-                });
-              } else {
-                console.warn('Invalid image format, skipping:', imageUrl.substring(0, 50));
-              }
+            });
+            
+            // Ensure we have at least text or image
+            if (contentParts.length === 0) {
+              return null; // Skip messages with no valid content
             }
-          });
+            
+            return {
+              role: m.role,
+              content: contentParts,
+            };
+          }
           
-          // Ensure we have at least text or image
-          if (contentParts.length === 0) {
-            return null; // Skip messages with no valid content
+          // Regular text message - ensure it's not empty
+          const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+          if (!textContent) {
+            return null; // Skip empty messages
           }
           
           return {
             role: m.role,
-            content: contentParts,
+            content: textContent,
           };
-        }
-        
-        // Regular text message - ensure it's not empty
-        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
-        if (!textContent) {
-          return null; // Skip empty messages
-        }
-        
-        return {
-          role: m.role,
-          content: textContent,
-        };
-      }).filter((m: any) => m !== null), // Remove null entries
+        })
+        .filter((m): m is Message => m !== null), // Remove null entries with type guard
     ];
 
     // Step 7: Get provider and stream response
@@ -262,16 +305,33 @@ export async function POST(req: NextRequest) {
             new TextEncoder().encode(`data: ${JSON.stringify(metadata)}\n\n`)
           );
 
-          // Stream the actual response
+          // Stream the actual response and capture usage
+          let usageData: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
+          
           for await (const chunk of provider.streamCall(enhancedMessages, {
             model: config.model,
             temperature: config.temperature,
             maxTokens: config.maxTokens,
             stream: true,
           })) {
+            // Check if chunk contains usage data (some providers send it)
+            if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
+              usageData = (chunk as any).usage;
+              continue; // Skip usage data chunks, they're not content
+            }
+            
             controller.enqueue(
               new TextEncoder().encode(
                 `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
+              )
+            );
+          }
+
+          // Send usage data if available
+          if (usageData) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: 'usage', usage: usageData })}\n\n`
               )
             );
           }

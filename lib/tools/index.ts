@@ -51,19 +51,61 @@ const webSearchTool: Tool = {
 };
 
 /**
- * Parse PDF Tool - Extract text from PDF files
+ * Parse File Tool - Extract text from various file formats
+ * Supports: PDF, DOCX, PPTX, TXT, MD, CSV, XLSX, JSON, images
  */
-const parsePdfTool: Tool = {
-  name: 'parse_pdf',
-  description: 'Extract and read text content from PDF files',
+const parseFileTool: Tool = {
+  name: 'parse_file',
+  description: 'Extract and read text content from various file formats (PDF, DOCX, PPTX, TXT, MD, CSV, XLSX, JSON, images)',
   parameters: {
-    file_path: 'string - path to PDF file or file data',
+    file_path: 'string - path to file or file data',
+    file_type: 'string - MIME type of the file (optional)',
   },
-  execute: async ({ file_path, file_data }, context) => {
-    // If file_data is provided (from upload), use it directly
+  execute: async ({ file_path, file_data, file_type }, context) => {
+    // Get file buffer
+    let buffer: Buffer;
+    let mimeType = file_type || 'application/octet-stream';
+    let fileName = 'file';
+
     if (file_data) {
+      // Handle base64 data URL format (data:type;base64,...)
+      let base64Data = file_data;
+      
+      if (typeof file_data === 'string' && file_data.includes(',')) {
+        // Extract MIME type and base64 part
+        const parts = file_data.split(',');
+        const dataUrlPrefix = parts[0];
+        base64Data = parts[1];
+        
+        // Extract MIME type from data URL
+        const mimeMatch = dataUrlPrefix.match(/data:([^;]+)/);
+        if (mimeMatch) {
+          mimeType = mimeMatch[1];
+        }
+      }
+      
+      try {
+        buffer = Buffer.from(base64Data, 'base64');
+      } catch (error) {
+        throw new Error(`Failed to decode base64: ${error}`);
+      }
+    } else if (file_path?.startsWith('http')) {
+      const response = await fetch(file_path);
+      buffer = Buffer.from(await response.arrayBuffer());
+    } else if (file_path) {
+      const fs = await import('fs');
+      buffer = fs.readFileSync(file_path);
+      fileName = file_path;
+    } else {
+      throw new Error('No file data or path provided');
+    }
+
+    // Parse based on file type
+    const fileNameLower = fileName.toLowerCase();
+    
+    // PDF
+    if (mimeType === 'application/pdf' || fileNameLower.endsWith('.pdf')) {
       const pdf = await import('pdf-parse');
-      const buffer = Buffer.from(file_data, 'base64');
       const data = await pdf.default(buffer);
       return {
         text: data.text,
@@ -71,25 +113,135 @@ const parsePdfTool: Tool = {
         info: data.info,
       };
     }
-
-    // Otherwise, try to fetch from URL or file path
-    let dataBuffer: Buffer;
-    if (file_path?.startsWith('http')) {
-      const response = await fetch(file_path);
-      dataBuffer = Buffer.from(await response.arrayBuffer());
-    } else {
-      // For server-side file system access
-      const fs = await import('fs');
-      dataBuffer = fs.readFileSync(file_path);
+    
+    // DOCX/DOC
+    if (mimeType.includes('word') || fileNameLower.endsWith('.docx') || fileNameLower.endsWith('.doc')) {
+      const mammoth = await import('mammoth');
+      const result = await mammoth.extractRawText({ buffer });
+      return {
+        text: result.value,
+        metadata: { messages: result.messages },
+      };
     }
+    
+    // PPTX/PPT (basic text extraction)
+    if (mimeType.includes('presentation') || fileNameLower.endsWith('.pptx') || fileNameLower.endsWith('.ppt')) {
+      const bufferString = buffer.toString('binary');
+      const textMatches = bufferString.match(/<a:t[^>]*>([^<]+)<\/a:t>/g);
+      const text = textMatches
+        ? textMatches
+            .map((match) => {
+              const textMatch = match.match(/<a:t[^>]*>([^<]+)<\/a:t>/);
+              return textMatch ? textMatch[1] : '';
+            })
+            .filter((text) => text.trim().length > 0)
+            .join('\n')
+        : 'Unable to extract text from PowerPoint file.';
+      return { text, metadata: { format: 'pptx' } };
+    }
+    
+    // Text files
+    if (mimeType.startsWith('text/') || fileNameLower.endsWith('.txt') || fileNameLower.endsWith('.md')) {
+      return { text: buffer.toString('utf-8') };
+    }
+    
+    // CSV
+    if (mimeType === 'text/csv' || fileNameLower.endsWith('.csv')) {
+      const Papa = await import('papaparse');
+      const csvText = buffer.toString('utf-8');
+      const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+      
+      let text = '';
+      if (parsed.data.length > 0) {
+        const headers = Object.keys(parsed.data[0] as any);
+        text += `CSV Data (${parsed.data.length} rows, ${headers.length} columns):\n\n`;
+        text += `Headers: ${headers.join(', ')}\n\n`;
+        parsed.data.slice(0, 100).forEach((row: any, index: number) => {
+          text += `Row ${index + 1}: ${headers.map((h) => `${h}=${row[h] || ''}`).join(', ')}\n`;
+        });
+        if (parsed.data.length > 100) {
+          text += `\n... and ${parsed.data.length - 100} more rows`;
+        }
+      }
+      
+      return {
+        text,
+        metadata: {
+          rowCount: parsed.data.length,
+          columns: parsed.data.length > 0 ? Object.keys(parsed.data[0] as any) : [],
+        },
+      };
+    }
+    
+    // Excel
+    if (mimeType.includes('spreadsheet') || fileNameLower.endsWith('.xlsx') || fileNameLower.endsWith('.xls')) {
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      let text = '';
+      
+      workbook.SheetNames.forEach((sheetName, index) => {
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        text += `Sheet ${index + 1}: ${sheetName}\n${'='.repeat(50)}\n\n`;
+        jsonData.forEach((row: any) => {
+          if (Array.isArray(row)) {
+            text += row.map((cell: any) => String(cell || '')).join(' | ') + '\n';
+          }
+        });
+        text += '\n';
+      });
+      
+      return {
+        text,
+        metadata: {
+          sheetCount: workbook.SheetNames.length,
+          sheetNames: workbook.SheetNames,
+        },
+      };
+    }
+    
+    // JSON
+    if (mimeType === 'application/json' || fileNameLower.endsWith('.json')) {
+      try {
+        const json = JSON.parse(buffer.toString('utf-8'));
+        return {
+          text: JSON.stringify(json, null, 2),
+          metadata: { type: 'json' },
+        };
+      } catch (error) {
+        throw new Error(`Invalid JSON: ${error}`);
+      }
+    }
+    
+    // Images
+    if (mimeType.startsWith('image/')) {
+      const base64 = buffer.toString('base64');
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+      return {
+        text: '',
+        isImage: true,
+        imageData: dataUrl,
+        metadata: { type: mimeType, size: buffer.length },
+      };
+    }
+    
+    throw new Error(`Unsupported file type: ${mimeType}`);
+  },
+};
 
-    const pdf = await import('pdf-parse');
-    const data = await pdf.default(dataBuffer);
-    return {
-      text: data.text,
-      pages: data.numpages,
-      info: data.info,
-    };
+/**
+ * Parse PDF Tool - Legacy tool for backward compatibility
+ */
+const parsePdfTool: Tool = {
+  name: 'parse_pdf',
+  description: 'Extract and read text content from PDF files (legacy - use parse_file for all formats)',
+  parameters: {
+    file_path: 'string - path to PDF file or file data',
+  },
+  execute: async ({ file_path, file_data }, context) => {
+    // Delegate to parse_file tool
+    return parseFileTool.execute({ file_path, file_data, file_type: 'application/pdf' }, context);
   },
 };
 
@@ -241,7 +393,8 @@ const fetchWebpageTool: Tool = {
 
 export const tools: Tool[] = [
   webSearchTool,
-  parsePdfTool,
+  parseFileTool,
+  parsePdfTool, // Keep for backward compatibility
   analyzeCsvTool,
   codeInterpreterTool,
   fetchWebpageTool,
@@ -265,9 +418,30 @@ export async function detectRequiredTools(
     requiredTools.push('web_search');
   }
 
-  // PDF parsing
-  if (files.some((f) => f.type === 'application/pdf')) {
-    requiredTools.push('parse_pdf');
+  // File parsing (PDF, DOCX, PPTX, TXT, MD, CSV, XLSX, JSON, images)
+  const supportedFileTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.ms-powerpoint',
+    'text/plain',
+    'text/markdown',
+    'text/csv',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'application/json',
+  ];
+  
+  const supportedExtensions = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.md', '.csv', '.xlsx', '.xls', '.json'];
+  
+  if (files.some((f) => {
+    const fileName = (f.name || '').toLowerCase();
+    return supportedFileTypes.includes(f.type) || 
+           supportedExtensions.some(ext => fileName.endsWith(ext)) ||
+           f.type?.startsWith('image/');
+  })) {
+    requiredTools.push('parse_file');
   }
 
   // CSV analysis
@@ -322,12 +496,46 @@ function extractToolParams(toolName: string, context: any): any {
   switch (toolName) {
     case 'web_search':
       return { query: context.userMessage, num_results: 5 };
+    case 'parse_file':
+      // Find any supported file
+      const supportedFile = context.files?.find((f: any) => {
+        const fileName = (f.name || '').toLowerCase();
+        const supportedTypes = [
+          'application/pdf',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          'application/vnd.ms-powerpoint',
+          'text/plain',
+          'text/markdown',
+          'text/csv',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+          'application/json',
+        ];
+        const supportedExtensions = ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.md', '.csv', '.xlsx', '.xls', '.json'];
+        return supportedTypes.includes(f.type) || 
+               supportedExtensions.some(ext => fileName.endsWith(ext)) ||
+               f.type?.startsWith('image/');
+      });
+      
+      if (supportedFile?.data) {
+        return { file_data: supportedFile.data, file_type: supportedFile.type };
+      }
+      if (supportedFile?.content) {
+        return { file_data: supportedFile.content, file_type: supportedFile.type };
+      }
+      return { file_path: supportedFile?.path || supportedFile?.url, file_type: supportedFile?.type };
     case 'parse_pdf':
+      // Legacy support - delegate to parse_file
       const pdfFile = context.files?.find((f: any) => f.type === 'application/pdf');
       if (pdfFile?.data) {
-        return { file_data: pdfFile.data };
+        return { file_data: pdfFile.data, file_type: 'application/pdf' };
       }
-      return { file_path: pdfFile?.path || pdfFile?.url };
+      if (pdfFile?.content) {
+        return { file_data: pdfFile.content, file_type: 'application/pdf' };
+      }
+      return { file_path: pdfFile?.path || pdfFile?.url, file_type: 'application/pdf' };
     case 'analyze_csv':
       const csvFile = context.files?.find((f: any) => f.type === 'text/csv');
       return { csv_data: csvFile?.content || csvFile?.data };

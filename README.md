@@ -5,7 +5,7 @@ A production-grade AI chatbot built on Next.js with PDF parsing, RAG (Retrieval-
 ## Features
 
 - ✅ **Intelligent Model Router**: Automatically selects the best model for each task (code, search, reasoning, etc.)
-- ✅ **Multi-Provider Support**: Groq, OpenAI, Anthropic, Perplexity with unified API
+- ✅ **Multi-Provider Support**: Groq, Kimi K2, Anthropic, Perplexity with unified API
 - ✅ **PDF Upload & RAG**: Upload PDFs, automatically parse and index them for semantic search
 - ✅ **Tool System**: Automatic web search, PDF parsing, CSV analysis, code execution, webpage fetching
 - ✅ **Task Classification**: Smart routing based on task type (code generation, web search, reasoning, etc.)
@@ -44,9 +44,10 @@ cp .env.example .env.local
 Edit `.env.local` and add your API keys:
 - `GROQ_API_KEY` - **Required** - Get from https://console.groq.com (FREE tier available)
 - `BRAVE_SEARCH_API_KEY` - **Required** - Get from https://brave.com/search/api/ (FREE 2000/month)
+- `KIMI_API_KEY` - **Recommended** - Get from https://platform.moonshot.cn (for Kimi K2 - reasoning & vision)
 - `PERPLEXITY_API_KEY` - Optional, for better search integration
 - `ANTHROPIC_API_KEY` - Optional, for Claude 3.5 (best for code editing)
-- `OPENAI_API_KEY` - Optional, for GPT-4 and embeddings
+- `OPENAI_API_KEY` - Optional, for embeddings only (Kimi doesn't have embeddings API)
 - `E2B_API_KEY` - Optional, for code execution ($10/mo)
 
 4. Run the development server:
@@ -81,11 +82,11 @@ The AI automatically selects the best model based on your task:
 - **Code Generation** → Groq Llama 70B (fast & cheap)
 - **Code Editing** → Claude 3.5 (best quality)
 - **Quick Q&A** → Groq Llama 8B (fastest)
-- **Reasoning** → GPT-4 Turbo (best reasoning)
+- **Reasoning** → Kimi K2 (excellent reasoning, better pricing)
 - **Creative Writing** → Claude 3.5 (best creativity)
-- **Data Analysis** → GPT-4 Turbo (best analysis)
+- **Data Analysis** → Kimi K2 (excellent analysis)
 - **Long Context** → Claude 3.5 (best context handling)
-- **Vision** → GPT-4 Vision
+- **Vision** → Kimi K2 (excellent vision capabilities)
 - **General** → Groq Llama 70B (balanced)
 
 ### Tools
@@ -131,16 +132,16 @@ The AI automatically uses tools when needed:
 The intelligent router automatically selects the cheapest model for each task:
 
 - **Groq**: FREE tier, then $0.27/1M tokens (cheapest for LLM)
+- **Kimi K2**: ~$1.2/1M tokens (excellent quality, great pricing)
 - **Perplexity**: $5/1M tokens (for web search)
 - **Anthropic Claude**: $3/1M tokens (best quality)
-- **OpenAI GPT-4**: $10/1M tokens (premium quality)
 - **OpenAI Embeddings**: $0.13/1M tokens (optional, can use client-side)
 - **Brave Search**: FREE 2,000 searches/month
 - **E2B Code Execution**: $10/mo (optional)
 
 **Estimated Monthly Cost**: $5-10 for personal use (much cheaper than ChatGPT Plus!)
 
-The router ensures you only pay for premium models when needed (e.g., GPT-4 for complex reasoning, Claude for code editing), while using cheaper models for simple tasks.
+The router ensures you only pay for premium models when needed (e.g., Kimi K2 for complex reasoning and vision, Claude for code editing), while using cheaper models for simple tasks.
 
 ## Development
 

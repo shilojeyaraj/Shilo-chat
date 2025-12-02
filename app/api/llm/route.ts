@@ -45,9 +45,9 @@ CRITICAL BEHAVIORS:
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       };
-    } else if (model === 'openai') {
-      apiUrl = 'https://api.openai.com/v1/chat/completions';
-      apiKey = process.env.OPENAI_API_KEY || '';
+    } else if (model === 'kimi') {
+      apiUrl = 'https://api.moonshot.cn/v1/chat/completions';
+      apiKey = process.env.KIMI_API_KEY || '';
       headers = {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
@@ -74,8 +74,8 @@ CRITICAL BEHAVIORS:
     let modelName = '';
     if (model === 'groq') {
       modelName = 'llama-3.3-70b-versatile';
-    } else if (model === 'openai') {
-      modelName = 'gpt-4-turbo-preview';
+    } else if (model === 'kimi') {
+      modelName = 'moonshot-v1-128k'; // Kimi K2
     } else if (model === 'openrouter') {
       modelName = 'anthropic/claude-3.5-sonnet';
     }

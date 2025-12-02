@@ -266,11 +266,11 @@ const perplexityProvider: LLMProvider = {
 };
 
 /**
- * OpenAI Provider
+ * Kimi K2 Provider (Moonshot AI - OpenAI Compatible)
  */
-const openaiProvider: LLMProvider = {
-  name: 'OpenAI',
-  isAvailable: () => !!process.env.OPENAI_API_KEY,
+const kimiProvider: LLMProvider = {
+  name: 'Kimi',
+  isAvailable: () => !!process.env.KIMI_API_KEY,
   call: async (messages, config) => {
     // Format messages for OpenAI (handle images - OpenAI uses image_url format)
     const formattedMessages = messages
@@ -353,11 +353,14 @@ const openaiProvider: LLMProvider = {
       ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
       : undefined;
 
-    // Determine model - use gpt-4o for vision, gpt-4-turbo for text
+    // Determine model - use moonshot-v1-128k (Kimi K2) for best performance
+    // Kimi supports vision, so we can use the same model for both
     const hasImages = formattedMessages.some((m: any) => 
       Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
     );
-    const modelName = config.model || (hasImages ? 'gpt-4o' : 'gpt-4-turbo');
+    // Kimi K2 models: moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k
+    // Default to 128k for best context window
+    const modelName = config.model || 'moonshot-v1-128k';
 
     const requestBody: any = {
       model: modelName,
@@ -366,7 +369,7 @@ const openaiProvider: LLMProvider = {
       max_tokens: config.maxTokens,
     };
 
-    // Add system message if present (OpenAI supports it)
+    // Add system message if present (Kimi supports it, OpenAI-compatible)
     if (systemContent) {
       requestBody.messages.unshift({
         role: 'system',
@@ -374,10 +377,10 @@ const openaiProvider: LLMProvider = {
       });
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${process.env.KIMI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
@@ -385,15 +388,15 @@ const openaiProvider: LLMProvider = {
 
     if (!response.ok) {
       const errorText = await response.text();
-      let errorMessage = `OpenAI API error (${response.status}): ${response.statusText}`;
+      let errorMessage = `Kimi API error (${response.status}): ${response.statusText}`;
       try {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.error?.message || errorJson.message || errorText;
-        console.error('OpenAI API Error Details:', errorJson);
+        console.error('Kimi API Error Details:', errorJson);
         console.error('Request body:', JSON.stringify(requestBody, null, 2));
       } catch {
         errorMessage = errorText || response.statusText;
-        console.error('OpenAI API Error (raw):', errorText);
+        console.error('Kimi API Error (raw):', errorText);
       }
       throw new Error(errorMessage);
     }
@@ -405,7 +408,7 @@ const openaiProvider: LLMProvider = {
     };
   },
   streamCall: async function* (messages, config) {
-    // Format messages for OpenAI (handle images - OpenAI uses image_url format)
+    // Format messages for Kimi (OpenAI-compatible, handles images with image_url format)
     const formattedMessages = messages
       .filter(m => m.role !== 'system') // System messages handled separately
       .map((m: any) => {
@@ -486,11 +489,14 @@ const openaiProvider: LLMProvider = {
       ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
       : undefined;
 
-    // Determine model - use gpt-4o for vision, gpt-4-turbo for text
+    // Determine model - use moonshot-v1-128k (Kimi K2) for best performance
+    // Kimi supports vision, so we can use the same model for both
     const hasImages = formattedMessages.some((m: any) => 
       Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
     );
-    const modelName = config.model || (hasImages ? 'gpt-4o' : 'gpt-4-turbo');
+    // Kimi K2 models: moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k
+    // Default to 128k for best context window
+    const modelName = config.model || 'moonshot-v1-128k';
 
     const requestBody: any = {
       model: modelName,
@@ -500,7 +506,7 @@ const openaiProvider: LLMProvider = {
       stream: true,
     };
 
-    // Add system message if present (OpenAI supports it)
+    // Add system message if present (Kimi supports it, OpenAI-compatible)
     if (systemContent) {
       requestBody.messages.unshift({
         role: 'system',
@@ -509,7 +515,7 @@ const openaiProvider: LLMProvider = {
     }
 
     // Log request for debugging
-    console.log('OpenAI API Request:', JSON.stringify({
+    console.log('Kimi API Request:', JSON.stringify({
       ...requestBody,
       messages: requestBody.messages.map((m: any) => ({
         role: m.role,
@@ -521,10 +527,10 @@ const openaiProvider: LLMProvider = {
       })),
     }, null, 2));
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Authorization': `Bearer ${process.env.KIMI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
@@ -532,15 +538,15 @@ const openaiProvider: LLMProvider = {
 
     if (!response.ok) {
       const errorText = await response.text();
-      let errorMessage = `OpenAI API error (${response.status}): ${response.statusText}`;
+      let errorMessage = `Kimi API error (${response.status}): ${response.statusText}`;
       try {
         const errorJson = JSON.parse(errorText);
         errorMessage = errorJson.error?.message || errorJson.message || errorText;
-        console.error('OpenAI API Error Details:', errorJson);
+        console.error('Kimi API Error Details:', errorJson);
         console.error('Request body:', JSON.stringify(requestBody, null, 2));
       } catch {
         errorMessage = errorText || response.statusText;
-        console.error('OpenAI API Error (raw):', errorText);
+        console.error('Kimi API Error (raw):', errorText);
       }
       throw new Error(errorMessage);
     }
@@ -854,7 +860,7 @@ const anthropicProvider: LLMProvider = {
 export const providers: Record<string, LLMProvider> = {
   groq: groqProvider,
   perplexity: perplexityProvider,
-  openai: openaiProvider,
+  kimi: kimiProvider,
   anthropic: anthropicProvider,
 };
 

@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download } from 'lucide-react';
+import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar } from 'lucide-react';
 import MessageContent from './MessageContent';
 import toast from 'react-hot-toast';
 import PdfUpload from './PdfUpload';
+import PersonalInfoManager from './PersonalInfo';
+import ResumeCustomizer from './ResumeCustomizer';
 import { 
   createConversation, 
   saveMessage, 
@@ -13,7 +15,15 @@ import {
   deleteConversation,
   updateConversationTitle 
 } from '@/lib/utils/chat-storage';
+import { normalizeForClipboard, normalizeOnPaste } from '@/lib/utils/text-normalization';
 import { db, Conversation } from '@/lib/db';
+import { 
+  canSendMessage, 
+  incrementMessageCount, 
+  getRemainingMessages,
+  getMessageLimit,
+  getUsageData 
+} from '@/lib/utils/usage-tracker';
 
 interface Message {
   id: string;
@@ -29,6 +39,11 @@ interface Message {
     providerName?: string;
     toolsUsed?: string[];
     costPer1M?: number;
+    usage?: {
+      promptTokens?: number;
+      completionTokens?: number;
+      totalTokens?: number;
+    };
   };
 }
 
@@ -44,13 +59,13 @@ const DEFAULT_MODEL_OPTIONS = [
   { value: 'groq/llama-3.1-8b-instant', label: 'Llama 8B (Fastest)' },
   { value: 'groq/llama-3.3-70b-versatile', label: 'Llama 70B (Balanced)' },
   { value: 'anthropic/claude-3-5-sonnet-20241022', label: 'Claude 3.5 (Best)' },
-  { value: 'openai/gpt-4-turbo-preview', label: 'GPT-4 Turbo' },
+  { value: 'kimi/moonshot-v1-128k', label: 'Kimi K2' },
   { value: 'perplexity/llama-3.1-sonar-large-128k-online', label: 'Perplexity (Search)' },
 ];
 
 const PROVIDER_COLORS: Record<string, string> = {
   groq: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-  openai: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  kimi: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
   anthropic: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
   perplexity: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
 };
@@ -81,25 +96,67 @@ export default function ChatInterface() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [selectedImages, setSelectedImages] = useState<string[]>([]); // Base64 images
   const [showSettings, setShowSettings] = useState(false);
+  const [showPersonalInfo, setShowPersonalInfo] = useState(false);
+  const [showResumeCustomizer, setShowResumeCustomizer] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const [mode, setMode] = useState<'primary' | 'coding'>('primary');
-  const [costData, setCostData] = useState<CostData>(() => {
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ file: File; preview?: string; type: string; name: string }>>([]);
+  const [remainingMessages, setRemainingMessages] = useState(0); // Initialize to 0 to avoid hydration mismatch
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  // Initialize cost data to avoid hydration mismatch
+  const [costData, setCostData] = useState<CostData>({ 
+    session: 0, 
+    monthly: 0, 
+    lastReset: Date.now() 
+  });
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Load cost data from localStorage after hydration
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('costData');
       if (stored) {
-        const data = JSON.parse(stored);
-        // Reset monthly if it's a new month
-        const now = Date.now();
-        const lastReset = data.lastReset || now;
-        const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
-        if (lastReset < monthAgo) {
-          return { session: 0, monthly: 0, lastReset: now };
+        try {
+          const data = JSON.parse(stored);
+          // Reset monthly if it's a new month
+          const now = Date.now();
+          const lastReset = data.lastReset || now;
+          const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
+          if (lastReset < monthAgo) {
+            setCostData({ session: 0, monthly: 0, lastReset: now });
+          } else {
+            setCostData(data);
+          }
+        } catch (error) {
+          console.error('Failed to parse cost data:', error);
         }
-        return data;
       }
     }
-    return { session: 0, monthly: 0, lastReset: Date.now() };
-  });
+  }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-resize textarea based on content (expands up to 1/3 of viewport height)
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight
+      textarea.style.height = 'auto';
+      // Calculate new height (min 48px, max 33vh - about 1/3 of viewport)
+      const maxHeight = Math.min(window.innerHeight * 0.33, 400); // 1/3 of viewport, capped at 400px
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+      textarea.style.height = `${Math.max(newHeight, 48)}px`; // At least 48px
+      
+      // Show scrollbar if content exceeds max height
+      if (textarea.scrollHeight > maxHeight) {
+        textarea.style.overflowY = 'auto';
+      } else {
+        textarea.style.overflowY = 'hidden';
+      }
+    }
+  }, [input]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -145,6 +202,12 @@ export default function ChatInterface() {
       if (savedModel) setUserOverride(savedModel);
       if (savedRAG !== null) setUseRAG(savedRAG === 'true');
       if (savedMode) setMode(savedMode);
+      
+      // Check initial message limit
+      setRemainingMessages(getRemainingMessages());
+      if (!canSendMessage()) {
+        setShowLimitModal(true);
+      }
     }
   }, []);
 
@@ -195,15 +258,63 @@ export default function ChatInterface() {
   // Delete conversation
   const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this conversation?')) {
-      await deleteConversation(conversationId);
-      if (currentConversationId === conversationId) {
-        setCurrentConversationId(null);
-        setMessages([]);
-      }
-      await loadConversations();
-      toast.success('Conversation deleted');
+    setConversationToDelete(conversationId);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteConversation = async () => {
+    if (!conversationToDelete) return;
+    
+    await deleteConversation(conversationToDelete);
+    if (currentConversationId === conversationToDelete) {
+      setCurrentConversationId(null);
+      setMessages([]);
     }
+    await loadConversations();
+    toast.success('Conversation deleted');
+    setShowDeleteConfirm(false);
+    setConversationToDelete(null);
+  };
+
+  // Generate title from first message
+  const generateTitleFromMessage = (content: string): string => {
+    // Remove markdown code blocks
+    let text = content.replace(/```[\s\S]*?```/g, '').trim();
+    // Remove markdown links
+    text = text.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+    // Remove extra whitespace
+    text = text.replace(/\s+/g, ' ').trim();
+    
+    // Take first 50 characters
+    if (text.length > 50) {
+      text = text.substring(0, 50).trim() + '...';
+    }
+    
+    return text || 'New Conversation';
+  };
+
+  // Update conversation title
+  const handleUpdateTitle = async (conversationId: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      toast.error('Title cannot be empty');
+      return;
+    }
+    try {
+      await updateConversationTitle(conversationId, newTitle.trim());
+      await loadConversations();
+      setEditingTitleId(null);
+      toast.success('Title updated');
+    } catch (error) {
+      console.error('Failed to update title:', error);
+      toast.error('Failed to update title');
+    }
+  };
+
+  // Start editing title
+  const handleStartEditTitle = (conv: Conversation, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingTitleId(conv.conversationId);
+    setEditingTitle(conv.title);
   };
 
   useEffect(() => {
@@ -213,19 +324,61 @@ export default function ChatInterface() {
     }
   }, [costData]);
 
+  // More accurate token estimation (accounts for different content types)
+  const estimateTokens = (text: string): number => {
+    // Rough estimation: ~0.75 tokens per word, or ~3-4 chars per token
+    // This is more accurate than simple char/4 division
+    const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+    const chars = text.length;
+    // Use word-based estimate (more accurate) with char-based fallback
+    const wordBased = words * 1.3; // ~1.3 tokens per word (accounts for punctuation, etc.)
+    const charBased = chars / 3.5; // ~3.5 chars per token average
+    // Average of both methods for better accuracy
+    return Math.max(wordBased, charBased);
+  };
+
   const estimateCost = (tokens: number, costPer1M: number): number => {
     return (tokens / 1_000_000) * costPer1M;
   };
 
-  // Handle image paste/upload
+  // Handle image paste/upload and text paste normalization
   const handleImagePaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
+    let hasImage = false;
+    
+    // Check for images first
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.indexOf('image') !== -1) {
         e.preventDefault();
+        hasImage = true;
         const file = items[i].getAsFile();
         if (file) {
           await handleImageFile(file);
+        }
+      }
+    }
+    
+    // If no image, handle text paste with normalization
+    if (!hasImage) {
+      const pastedText = e.clipboardData.getData('text');
+      if (pastedText) {
+        // Normalize pasted text to remove em dashes and other problematic characters
+        const normalizedText = normalizeOnPaste(pastedText);
+        
+        // If the text was modified, prevent default and insert normalized text
+        if (normalizedText !== pastedText) {
+          e.preventDefault();
+          const textarea = e.currentTarget as HTMLTextAreaElement;
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const currentValue = input;
+          const newValue = currentValue.slice(0, start) + normalizedText + currentValue.slice(end);
+          setInput(newValue);
+          
+          // Set cursor position after inserted text
+          setTimeout(() => {
+            textarea.selectionStart = textarea.selectionEnd = start + normalizedText.length;
+          }, 0);
         }
       }
     }
@@ -262,14 +415,82 @@ export default function ChatInterface() {
     setSelectedImages((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Handle file attachments (PDFs, images, text files, etc.)
+  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file) => {
+      // Check file size (20MB max)
+      if (file.size > 20 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 20MB)`);
+        return;
+      }
+
+      // Check if it's an image - handle separately
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const base64 = e.target?.result as string;
+          setSelectedImages((prev) => [...prev, base64]);
+        };
+        reader.readAsDataURL(file);
+        toast.success(`Image ${file.name} added`);
+        return;
+      }
+
+      // For other files (PDF, TXT, CSV, etc.)
+      const fileObj = {
+        file,
+        type: file.type,
+        name: file.name,
+      };
+
+      setAttachedFiles((prev) => [...prev, fileObj]);
+      toast.success(`File ${file.name} attached`);
+    });
+
+    // Reset input
+    e.target.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const getFileIcon = (type: string, name?: string) => {
+    const fileName = (name || '').toLowerCase();
+    if (type === 'application/pdf' || fileName.endsWith('.pdf')) return '📄';
+    if (type.includes('word') || fileName.endsWith('.docx') || fileName.endsWith('.doc')) return '📝';
+    if (type.includes('presentation') || fileName.endsWith('.pptx') || fileName.endsWith('.ppt')) return '📊';
+    if (type === 'text/csv' || fileName.endsWith('.csv')) return '📈';
+    if (type.includes('spreadsheet') || fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) return '📊';
+    if (type.startsWith('text/') || fileName.endsWith('.txt') || fileName.endsWith('.md')) return '📄';
+    if (type === 'application/json' || fileName.endsWith('.json')) return '📋';
+    if (type.startsWith('image/')) return '🖼️';
+    if (type.includes('code') || type.includes('javascript') || type.includes('typescript')) return '💻';
+    return '📎';
+  };
+
   const handleSend = async () => {
-    if ((!input.trim() && selectedImages.length === 0) || isLoading) return;
+    if ((!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || isLoading) return;
+
+    // Check message limit
+    if (!canSendMessage()) {
+      setShowLimitModal(true);
+      toast.error(`Daily message limit reached! Upgrade to continue chatting.`);
+      return;
+    }
 
     // Create conversation if needed
     let convId = currentConversationId;
+    let isNewConversation = false;
     if (!convId) {
-      convId = await createConversation();
+      // Generate title from first message
+      const title = generateTitleFromMessage(input);
+      convId = await createConversation(title);
       setCurrentConversationId(convId);
+      isNewConversation = true;
       await loadConversations();
     }
 
@@ -286,18 +507,92 @@ export default function ChatInterface() {
     // Save user message
     await saveMessage(convId, userMessage);
     
+    // Increment message count and update remaining
+    const updatedUsage = incrementMessageCount();
+    setRemainingMessages(getRemainingMessages());
+    
+    // Check if this was the last message
+    if (!canSendMessage()) {
+      setShowLimitModal(true);
+    }
+    
+    // Update title if this is the first message
+    if (isNewConversation && input.trim()) {
+      const title = generateTitleFromMessage(input);
+      await updateConversationTitle(convId, title);
+      await loadConversations();
+    }
+    
     setInput('');
     setSelectedImages([]);
+    setAttachedFiles([]);
     setIsLoading(true);
     setActiveTools([]);
 
     try {
-      // Prepare files for API
-      const files = selectedImages.map((img, idx) => ({
+      // Prepare image files for API
+      const imageFiles = selectedImages.map((img, idx) => ({
         type: 'image/png', // Will be detected from base64
         data: img,
         name: `image-${idx}.png`,
       }));
+
+      // Convert attached files to base64
+      const filePromises = attachedFiles.map(async (fileObj) => {
+        return new Promise<{ type: string; data: string; name: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const base64 = e.target?.result as string;
+            resolve({
+              type: fileObj.type,
+              data: base64,
+              name: fileObj.name,
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(fileObj.file);
+        });
+      });
+
+      const convertedFiles = await Promise.all(filePromises);
+      const files = [...imageFiles, ...convertedFiles];
+
+      // Fetch personal info on client side (IndexedDB is only available in browser)
+      let personalInfoContext = '';
+      try {
+        const { getRelevantPersonalInfo, getPersonalInfoContext } = await import('@/lib/utils/personal-info');
+        const relevantPersonalInfo = await getRelevantPersonalInfo(input, 3);
+        if (relevantPersonalInfo.length > 0) {
+          // Format relevant personal info
+          personalInfoContext = '\n\n[Relevant Personal Information]:\n';
+          relevantPersonalInfo.forEach((info, index) => {
+            personalInfoContext += `\n${index + 1}. ${info.title} (${info.category})\n`;
+            personalInfoContext += `${info.content}\n`;
+            if (info.metadata?.technologies) {
+              personalInfoContext += `Technologies: ${info.metadata.technologies.join(', ')}\n`;
+            }
+          });
+        } else {
+          // If no specific match, include general personal info summary
+          personalInfoContext = await getPersonalInfoContext();
+        }
+      } catch (error) {
+        console.error('Personal info retrieval error:', error);
+        // Continue without personal info if it fails
+      }
+
+      // Fetch persistent memory on client side
+      let memoryContext = '';
+      try {
+        const { searchMemories, formatMemoriesForContext } = await import('@/lib/utils/memory');
+        const relevantMemories = await searchMemories(input, 5);
+        if (relevantMemories.length > 0) {
+          memoryContext = formatMemoriesForContext(relevantMemories);
+        }
+      } catch (error) {
+        console.error('Memory retrieval error:', error);
+        // Continue without memory if it fails
+      }
 
       // Call the new intelligent chat API
       const response = await fetch('/api/chat', {
@@ -316,6 +611,8 @@ export default function ChatInterface() {
           useRAG,
           userOverride: userOverride || undefined,
           mode, // Pass mode to API
+          personalInfoContext, // Include personal info context
+          memoryContext, // Include persistent memory context
         }),
       });
 
@@ -390,6 +687,12 @@ export default function ChatInterface() {
                     updated[updated.length - 1] = { ...assistantMessage };
                     return updated;
                   });
+                } else if (parsed.type === 'usage' && parsed.usage) {
+                  // Store actual usage data if provided by API
+                  assistantMessage.metadata = {
+                    ...assistantMessage.metadata,
+                    usage: parsed.usage,
+                  };
                 }
               } catch (e) {
                 console.warn('Failed to parse SSE data:', e, data);
@@ -398,10 +701,29 @@ export default function ChatInterface() {
           }
         }
 
-        // Estimate and update cost (rough estimate based on content length)
+        // Calculate and update cost (use actual usage if available, otherwise estimate)
         if (assistantMessage.metadata?.costPer1M) {
-          const estimatedTokens = (assistantMessage.content.length / 4) + (input.length / 4); // Rough estimate
-          const cost = estimateCost(estimatedTokens, assistantMessage.metadata.costPer1M);
+          let totalTokens: number;
+          
+          // Use actual token usage if available from API
+          if (assistantMessage.metadata.usage?.totalTokens) {
+            totalTokens = assistantMessage.metadata.usage.totalTokens;
+          } else {
+            // Fallback to improved estimation
+            const inputTokens = estimateTokens(input);
+            const outputTokens = estimateTokens(assistantMessage.content);
+            
+            // Account for system prompts and context (rough estimate: ~500-1000 tokens)
+            const contextTokens = 750; // Average system prompt + context overhead
+            
+            // Account for images if present (each image adds significant tokens)
+            const imageTokens = selectedImages.length * 170; // ~170 tokens per image (base64 encoded)
+            
+            totalTokens = inputTokens + outputTokens + contextTokens + imageTokens;
+          }
+          
+          const cost = estimateCost(totalTokens, assistantMessage.metadata.costPer1M);
+          
           setCostData((prev) => ({
             ...prev,
             session: prev.session + cost,
@@ -416,6 +738,31 @@ export default function ChatInterface() {
             sources: assistantMessage.sources,
           });
           await loadConversations(); // Update conversation list
+        }
+
+        // Extract and save potential memories from the conversation
+        try {
+          const { extractPotentialMemories, addMemory } = await import('@/lib/utils/memory');
+          const potentialMemories = extractPotentialMemories(input, assistantMessage.content);
+          
+          // Add memories (with deduplication - check if similar memory exists)
+          for (const memory of potentialMemories) {
+            try {
+              // Simple deduplication: check if similar fact already exists
+              const { searchMemories } = await import('@/lib/utils/memory');
+              const existing = await searchMemories(memory.fact, 1);
+              
+              if (existing.length === 0 || existing[0].fact.toLowerCase() !== memory.fact.toLowerCase()) {
+                await addMemory(memory, convId || 'unknown');
+              }
+            } catch (err) {
+              console.error('Failed to add memory:', err);
+              // Continue with other memories
+            }
+          }
+        } catch (error) {
+          console.error('Memory extraction error:', error);
+          // Continue - memory extraction is non-critical
         }
       }
     } catch (error: any) {
@@ -565,21 +912,72 @@ export default function ChatInterface() {
             {(searchQuery ? filteredConversations : conversations.slice(0, 10)).map((conv) => (
               <div
                 key={conv.conversationId}
-                onClick={() => handleLoadConversation(conv.conversationId)}
                 className={`
-                  px-3 py-2.5 rounded-lg cursor-pointer transition-colors
+                  group px-3 py-2.5 rounded-lg transition-colors
                   ${currentConversationId === conv.conversationId
                     ? 'bg-gray-700'
                     : 'hover:bg-gray-700/50'
                   }
                 `}
               >
-                <div className="text-sm font-medium text-white truncate mb-1">
-                  {conv.title}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {formatConversationTime(conv.updatedAt)}
-                </div>
+                {editingTitleId === conv.conversationId ? (
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onBlur={() => {
+                        if (editingTitle.trim()) {
+                          handleUpdateTitle(conv.conversationId, editingTitle);
+                        } else {
+                          setEditingTitleId(null);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (editingTitle.trim()) {
+                            handleUpdateTitle(conv.conversationId, editingTitle);
+                          }
+                        } else if (e.key === 'Escape') {
+                          setEditingTitleId(null);
+                          setEditingTitle('');
+                        }
+                      }}
+                      autoFocus
+                      className="flex-1 px-2 py-1 text-sm bg-gray-600 text-white rounded border border-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div 
+                      onClick={() => handleLoadConversation(conv.conversationId)}
+                      className="cursor-pointer"
+                    >
+                      <div className="text-sm font-medium text-white truncate mb-1">
+                        {conv.title}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {formatConversationTime(conv.updatedAt)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => handleStartEditTitle(conv, e)}
+                        className="p-1 text-gray-400 hover:text-blue-400 transition-colors"
+                        title="Edit title"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteConversation(conv.conversationId, e)}
+                        className="p-1 text-gray-400 hover:text-red-400 transition-colors"
+                        title="Delete conversation"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
             {conversations.length === 0 && (
@@ -598,9 +996,10 @@ export default function ChatInterface() {
                 toast.error('No conversation to export');
                 return;
               }
-              const conversationText = messages.map(m => 
-                `${m.role === 'user' ? 'You' : 'Assistant'}: ${m.content}`
-              ).join('\n\n');
+              const conversationText = messages.map(m => {
+                const normalizedContent = normalizeForClipboard(m.content);
+                return `${m.role === 'user' ? 'You' : 'Assistant'}: ${normalizedContent}`;
+              }).join('\n\n');
               const blob = new Blob([conversationText], { type: 'text/markdown' });
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
@@ -615,6 +1014,20 @@ export default function ChatInterface() {
           >
             <Download className="w-4 h-4" />
             Export Chat
+          </button>
+          <button 
+            onClick={() => setShowPersonalInfo(true)}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full"
+          >
+            <User className="w-4 h-4" />
+            Personal Info
+          </button>
+          <button 
+            onClick={() => setShowResumeCustomizer(true)}
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full"
+          >
+            <FileText className="w-4 h-4" />
+            Resume Customizer
           </button>
           <button 
             onClick={() => setShowSettings(true)}
@@ -665,9 +1078,22 @@ export default function ChatInterface() {
         <div className="bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-semibold text-white">Shilo Chat</h1>
-            <span className="text-sm text-gray-400">
-              {getCurrentModelDisplay()} • ${costData.session.toFixed(2)}/1K tokens
-            </span>
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-400">
+                {getCurrentModelDisplay()} • ${costData.session.toFixed(2)}/1K tokens
+              </span>
+              {remainingMessages !== Infinity && (
+                <span className={`text-xs px-2 py-1 rounded ${
+                  remainingMessages <= 5 
+                    ? 'bg-red-600/20 text-red-400' 
+                    : remainingMessages <= 10
+                    ? 'bg-yellow-600/20 text-yellow-400'
+                    : 'bg-green-600/20 text-green-400'
+                }`}>
+                  {remainingMessages} messages left today
+                </span>
+              )}
+            </div>
             {mode === 'coding' && (
               <span className="text-xs px-2 py-1 bg-green-600/20 text-green-400 rounded">
                 Multi-Agent Mode
@@ -744,7 +1170,8 @@ export default function ChatInterface() {
                 <div className={`flex items-center gap-2 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(message.content || '');
+                      const normalizedContent = normalizeForClipboard(message.content || '');
+                      navigator.clipboard.writeText(normalizedContent);
                       toast.success('Copied to clipboard');
                     }}
                     className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-gray-300 transition-colors"
@@ -761,6 +1188,39 @@ export default function ChatInterface() {
                           const lastUserMessage = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
                           if (!lastUserMessage) return;
                           
+                          // Fetch personal info on client side
+                          let personalInfoContext = '';
+                          try {
+                            const { getRelevantPersonalInfo, getPersonalInfoContext } = await import('@/lib/utils/personal-info');
+                            const relevantPersonalInfo = await getRelevantPersonalInfo(lastUserMessage.content || '', 3);
+                            if (relevantPersonalInfo.length > 0) {
+                              personalInfoContext = '\n\n[Relevant Personal Information]:\n';
+                              relevantPersonalInfo.forEach((info, index) => {
+                                personalInfoContext += `\n${index + 1}. ${info.title} (${info.category})\n`;
+                                personalInfoContext += `${info.content}\n`;
+                                if (info.metadata?.technologies) {
+                                  personalInfoContext += `Technologies: ${info.metadata.technologies.join(', ')}\n`;
+                                }
+                              });
+                            } else {
+                              personalInfoContext = await getPersonalInfoContext();
+                            }
+                          } catch (error) {
+                            console.error('Personal info retrieval error:', error);
+                          }
+
+                          // Fetch persistent memory
+                          let memoryContext = '';
+                          try {
+                            const { searchMemories, formatMemoriesForContext } = await import('@/lib/utils/memory');
+                            const relevantMemories = await searchMemories(lastUserMessage.content || '', 5);
+                            if (relevantMemories.length > 0) {
+                              memoryContext = formatMemoriesForContext(relevantMemories);
+                            }
+                          } catch (error) {
+                            console.error('Memory retrieval error:', error);
+                          }
+                          
                           const response = await fetch('/api/chat', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -775,6 +1235,8 @@ export default function ChatInterface() {
                               useRAG,
                               userOverride: userOverride || undefined,
                               mode,
+                              personalInfoContext, // Include personal info context
+                              memoryContext, // Include persistent memory context
                             }),
                           });
                           
@@ -862,40 +1324,78 @@ export default function ChatInterface() {
         {/* Input Area */}
         <div className="bg-gray-800 border-t border-gray-700 p-4">
           <div className="max-w-4xl mx-auto">
-            {/* Image previews */}
-            {selectedImages.length > 0 && (
-              <div className="mb-3 flex gap-2 flex-wrap">
-                {selectedImages.map((img, idx) => (
-                  <div key={idx} className="relative group">
-                    <img
-                      src={img}
-                      alt={`Preview ${idx + 1}`}
-                      className="w-20 h-20 object-cover rounded-lg border border-gray-600"
-                    />
-                    <button
-                      onClick={() => removeImage(idx)}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="w-4 h-4 text-white" />
-                    </button>
+            {/* Image and file previews */}
+            {(selectedImages.length > 0 || attachedFiles.length > 0) && (
+              <div className="mb-3 space-y-2">
+                {/* Image previews */}
+                {selectedImages.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {selectedImages.map((img, idx) => (
+                      <div key={`img-${idx}`} className="relative group">
+                        <img
+                          src={img}
+                          alt={`Preview ${idx + 1}`}
+                          className="w-20 h-20 object-cover rounded-lg border border-gray-600"
+                        />
+                        <button
+                          onClick={() => removeImage(idx)}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-4 h-4 text-white" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+                {/* File attachments */}
+                {attachedFiles.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {attachedFiles.map((fileObj, idx) => (
+                      <div
+                        key={`file-${idx}`}
+                        className="relative group flex items-center gap-2 px-3 py-2 bg-gray-700 rounded-lg border border-gray-600"
+                      >
+                        <span className="text-lg">{getFileIcon(fileObj.type, fileObj.name)}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs text-white truncate max-w-[150px]">
+                            {fileObj.name}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {(fileObj.file.size / 1024).toFixed(1)} KB
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeFile(idx)}
+                          className="w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <div className="flex items-end gap-3">
               <div className="flex-1 relative">
                 <textarea
+                  ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyPress}
                   onPaste={handleImagePaste}
-                  placeholder="Type your message... (Paste images or click 📷 to upload)"
-                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-600 placeholder-gray-400"
+                  placeholder="Type your message... (Attach files with 📎 or images with 📷)"
+                  className="w-full px-4 py-3 bg-gray-700 text-white rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 border border-gray-600 placeholder-gray-400 transition-all"
                   rows={1}
                   disabled={isLoading}
-                  style={{ minHeight: '48px', maxHeight: '120px' }}
+                  style={{ 
+                    minHeight: '48px', 
+                    maxHeight: '33vh',
+                    overflowY: 'auto'
+                  }}
                 />
               </div>
+              {/* Image upload */}
               <input
                 type="file"
                 accept="image/*"
@@ -907,13 +1407,33 @@ export default function ChatInterface() {
               <label
                 htmlFor="image-upload"
                 className="w-12 h-12 bg-gray-700 hover:bg-gray-600 rounded-full flex items-center justify-center transition-colors flex-shrink-0 cursor-pointer"
+                title="Upload images"
               >
                 <ImageIcon className="w-5 h-5 text-gray-300" />
               </label>
+              
+              {/* File attachment */}
+              <input
+                type="file"
+                accept=".pdf,.txt,.csv,.json,.md,.doc,.docx,.pptx,.ppt,.xlsx,.xls,image/*,text/*"
+                onChange={handleFileAttachment}
+                className="hidden"
+                id="file-upload"
+                multiple
+              />
+              <label
+                htmlFor="file-upload"
+                className="w-12 h-12 bg-gray-700 hover:bg-gray-600 rounded-full flex items-center justify-center transition-colors flex-shrink-0 cursor-pointer"
+                title="Attach files (PDF, images, text, etc.)"
+              >
+                <Paperclip className="w-5 h-5 text-gray-300" />
+              </label>
+              
               <button
                 onClick={handleSend}
-                disabled={isLoading || (!input.trim() && selectedImages.length === 0)}
+                disabled={isLoading || (!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || !canSendMessage()}
                 className="w-12 h-12 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-full flex items-center justify-center transition-colors flex-shrink-0"
+                title={!canSendMessage() ? 'Daily limit reached. Upgrade to continue.' : 'Send message'}
               >
                 {isLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin text-white" />
@@ -927,6 +1447,149 @@ export default function ChatInterface() {
             </p>
           </div>
         </div>
+
+        {/* Personal Info Modal */}
+        {showPersonalInfo && (
+          <PersonalInfoManager onClose={() => setShowPersonalInfo(false)} />
+        )}
+
+        {/* Resume Customizer Modal */}
+        {showResumeCustomizer && (
+          <ResumeCustomizer onClose={() => setShowResumeCustomizer(false)} />
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowDeleteConfirm(false)}>
+            <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-gray-700 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-400" />
+                </div>
+                <h2 className="text-xl font-semibold text-white">Delete Conversation</h2>
+              </div>
+              
+              <p className="text-gray-300 mb-6">
+                Are you sure you want to delete this conversation? This action cannot be undone and all messages will be permanently removed.
+              </p>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setConversationToDelete(null);
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteConversation}
+                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Message Limit Modal */}
+        {showLimitModal && (() => {
+          const usage = getUsageData();
+          const currentTier = usage.subscriptionTier;
+          const currentLimit = getMessageLimit();
+          
+          // Determine upgrade suggestion based on current tier
+          let upgradeTier: 'plus' | 'premium' | null = null;
+          let upgradeMessage = '';
+          
+          if (currentTier === 'free') {
+            upgradeTier = 'plus';
+            upgradeMessage = 'Upgrade to Plus (100 messages/day) or Premium (500 messages/day) to continue chatting!';
+          } else if (currentTier === 'plus') {
+            upgradeTier = 'premium';
+            upgradeMessage = 'Upgrade to Premium (500 messages/day) to get 5x more messages!';
+          } else if (currentTier === 'premium') {
+            upgradeMessage = 'You\'ve reached the maximum daily limit. Your messages will reset tomorrow.';
+          }
+          
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLimitModal(false)}>
+              <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-white">Daily Limit Reached</h2>
+                  <button
+                    onClick={() => setShowLimitModal(false)}
+                    className="text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="space-y-4">
+                  <p className="text-gray-300">
+                    {upgradeMessage || `You've used all ${currentLimit} messages for today.`}
+                  </p>
+                  
+                  <div className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                    <h3 className="text-sm font-medium text-white mb-2">Your Usage</h3>
+                    <div className="text-xs text-gray-400 space-y-1">
+                      <div>Daily Messages: {usage.dailyMessages} / {currentLimit === Infinity ? '∞' : currentLimit}</div>
+                      <div>Total Messages: {usage.totalMessages}</div>
+                      <div>Current Tier: <span className="text-white capitalize">{currentTier}</span></div>
+                    </div>
+                  </div>
+
+                  {upgradeTier && (
+                    <div className="bg-blue-600/20 border border-blue-600/30 rounded-lg p-3">
+                      <p className="text-sm text-blue-300 mb-2">
+                        💡 <strong>Recommended:</strong> {upgradeTier === 'plus' ? 'Plus Plan' : 'Premium Plan'}
+                      </p>
+                      <p className="text-xs text-blue-400/80">
+                        {upgradeTier === 'plus' 
+                          ? 'Get 100 messages per day for just $9.99/month'
+                          : 'Get 500 messages per day for just $19.99/month'}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3 pt-2">
+                    {upgradeTier ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setShowLimitModal(false);
+                            window.location.href = `/pricing?highlight=${upgradeTier}`;
+                          }}
+                          className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                        >
+                          Upgrade to {upgradeTier === 'plus' ? 'Plus' : 'Premium'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowLimitModal(false);
+                            window.location.href = '/pricing';
+                          }}
+                          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+                        >
+                          View All Plans
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setShowLimitModal(false)}
+                        className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+                      >
+                        Close
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Settings Modal */}
         {showSettings && (
@@ -985,11 +1648,83 @@ export default function ChatInterface() {
                 </div>
 
                 <div className="pt-4 border-t border-gray-700">
+                  <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Cost Tracking
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="p-3 bg-gray-700/50 rounded-lg border border-gray-600">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-400">This Session</span>
+                        <span className="text-lg font-semibold text-white">
+                          ${costData.session.toFixed(4)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Cost for current conversation session
+                      </p>
+                    </div>
+                    
+                    <div className="p-3 bg-blue-600/20 rounded-lg border border-blue-600/30">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-blue-300 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          This Month
+                        </span>
+                        <span className="text-lg font-semibold text-blue-200">
+                          ${costData.monthly.toFixed(4)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-blue-400/70">
+                        Total cost since {new Date(costData.lastReset).toLocaleDateString('en-US', { 
+                          month: 'short', 
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2">
+                      <button
+                        onClick={() => {
+                          if (confirm('Reset monthly cost tracking? This will start a new monthly period.')) {
+                            setCostData({
+                              session: costData.session,
+                              monthly: 0,
+                              lastReset: Date.now(),
+                            });
+                            toast.success('Monthly cost reset');
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
+                      >
+                        Reset Monthly
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm('Reset session cost? This will clear the current session cost.')) {
+                            setCostData({
+                              session: 0,
+                              monthly: costData.monthly,
+                              lastReset: costData.lastReset,
+                            });
+                            toast.success('Session cost reset');
+                          }
+                        }}
+                        className="flex-1 px-3 py-2 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors"
+                      >
+                        Reset Session
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-700">
                   <h3 className="text-sm font-medium text-gray-300 mb-2">Available Models</h3>
                   <div className="space-y-2 text-xs text-gray-400">
                     <div>• Groq: Llama 3.1 8B, Llama 3.3 70B (Fast & Cheap)</div>
                     <div>• Anthropic: Claude 3.5 Sonnet (Best Quality)</div>
-                    <div>• OpenAI: GPT-4 Turbo, GPT-4 Vision (Premium)</div>
+                    <div>• Kimi: Kimi K2 (moonshot-v1-128k) - Vision & Reasoning (Premium)</div>
                     <div>• Perplexity: Sonar (Web Search)</div>
                   </div>
                 </div>

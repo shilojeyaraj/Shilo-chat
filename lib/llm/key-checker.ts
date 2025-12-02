@@ -6,7 +6,7 @@
 export interface AvailableProviders {
   groq: boolean;
   perplexity: boolean;
-  openai: boolean;
+  kimi: boolean;
   anthropic: boolean;
 }
 
@@ -17,7 +17,7 @@ export function getAvailableProviders(): AvailableProviders {
   return {
     groq: !!process.env.GROQ_API_KEY,
     perplexity: !!process.env.PERPLEXITY_API_KEY,
-    openai: !!process.env.OPENAI_API_KEY,
+    kimi: !!process.env.KIMI_API_KEY,
     anthropic: !!process.env.ANTHROPIC_API_KEY,
   };
 }
@@ -27,19 +27,19 @@ export function getAvailableProviders(): AvailableProviders {
  * Falls back to available providers if preferred one isn't available
  */
 export function getBestAvailableProvider(
-  preferred: 'groq' | 'perplexity' | 'openai' | 'anthropic',
+  preferred: 'groq' | 'perplexity' | 'kimi' | 'anthropic',
   available: AvailableProviders
-): 'groq' | 'perplexity' | 'openai' | 'anthropic' | null {
+): 'groq' | 'perplexity' | 'kimi' | 'anthropic' | null {
   // If preferred is available, use it
   if (available[preferred]) {
     return preferred;
   }
 
   // Fallback priority order
-  const fallbackOrder: Array<'groq' | 'perplexity' | 'openai' | 'anthropic'> = [
+  const fallbackOrder: Array<'groq' | 'perplexity' | 'kimi' | 'anthropic'> = [
     'groq',      // Cheapest, fastest
+    'kimi',      // Great quality, good pricing (Kimi K2)
     'anthropic', // Good quality, moderate cost
-    'openai',    // Best quality, expensive
     'perplexity', // Specialized for search
   ];
 

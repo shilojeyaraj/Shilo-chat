@@ -3,6 +3,7 @@ import { getAvailableProviders, getBestAvailableProvider } from './key-checker';
 
 export type TaskType =
   | 'web_search'
+  | 'deep_research'
   | 'code_generation'
   | 'code_editing'
   | 'reasoning'
@@ -14,7 +15,7 @@ export type TaskType =
   | 'general';
 
 export interface ModelConfig {
-  provider: 'groq' | 'openai' | 'anthropic' | 'perplexity';
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity';
   model: string;
   maxTokens: number;
   temperature: number;
@@ -27,6 +28,13 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     model: 'llama-3.1-sonar-large-128k-online',
     maxTokens: 4096,
     temperature: 0.7,
+    costPer1M: 5,
+  },
+  deep_research: {
+    provider: 'perplexity',
+    model: 'llama-3.1-sonar-large-128k-online', // Perplexity's research model
+    maxTokens: 8192, // More tokens for comprehensive research
+    temperature: 0.3, // Lower temperature for more factual, comprehensive responses
     costPer1M: 5,
   },
   code_generation: {
@@ -44,11 +52,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   reasoning: {
-    provider: 'openai',
-    model: 'gpt-4o', // Updated to GPT-4o
+    provider: 'kimi',
+    model: 'moonshot-v1-128k', // Kimi K2 - excellent reasoning
     maxTokens: 4096,
     temperature: 0.8,
-    costPer1M: 5,
+    costPer1M: 1.2, // Kimi pricing is typically lower than OpenAI
   },
   quick_qa: {
     provider: 'groq',
@@ -65,11 +73,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   data_analysis: {
-    provider: 'openai',
-    model: 'gpt-4o', // Updated to GPT-4o
+    provider: 'kimi',
+    model: 'moonshot-v1-128k', // Kimi K2 - great for data analysis
     maxTokens: 4096,
     temperature: 0.3,
-    costPer1M: 5,
+    costPer1M: 1.2,
   },
   long_context: {
     provider: 'anthropic',
@@ -79,11 +87,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   vision: {
-    provider: 'openai', // Use GPT-4o for best vision support
-    model: 'gpt-4o', // GPT-4o has excellent vision capabilities
+    provider: 'kimi', // Kimi K2 supports vision
+    model: 'moonshot-v1-128k', // Kimi K2 has excellent vision capabilities
     maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 5, // GPT-4o pricing
+    costPer1M: 1.2, // Kimi pricing
   },
   general: {
     provider: 'groq',
@@ -113,6 +121,17 @@ export async function classifyTask(
   // Check for code generation
   if (/write code|create|implement|build|function|class|component|generate code/i.test(userMessage)) {
     return 'code_generation';
+  }
+
+  // Check for deep research needs (comprehensive research queries)
+  const researchKeywords = [
+    'research', 'comprehensive', 'detailed analysis', 'deep dive', 'in-depth',
+    'thorough', 'complete report', 'full analysis', 'extensive', 'investigate',
+    'study', 'examine', 'explore', 'analyze in detail', 'comprehensive report'
+  ];
+  if (researchKeywords.some(kw => userMessage.toLowerCase().includes(kw)) || 
+      (userMessage.length > 200 && /analyze|research|investigate|study|examine/i.test(userMessage))) {
+    return 'deep_research';
   }
 
   // Check for web search needs
@@ -153,7 +172,7 @@ export async function classifyTask(
  * Get fallback model config for a provider
  */
 function getFallbackConfig(
-  provider: 'groq' | 'openai' | 'anthropic' | 'perplexity'
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity'
 ): ModelConfig {
   const fallbacks: Record<string, ModelConfig> = {
     groq: {
@@ -170,12 +189,12 @@ function getFallbackConfig(
       temperature: 0.7,
       costPer1M: 3,
     },
-    openai: {
-      provider: 'openai',
-      model: 'gpt-4o', // Updated to GPT-4o
+    kimi: {
+      provider: 'kimi',
+      model: 'moonshot-v1-128k', // Kimi K2
       maxTokens: 4096,
       temperature: 0.7,
-      costPer1M: 5,
+      costPer1M: 1.2,
     },
     perplexity: {
       provider: 'perplexity',
@@ -227,21 +246,30 @@ export async function routeRequest(
     mode?: 'primary' | 'coding'; // Chat mode
   } = {}
 ): Promise<{ config: ModelConfig; taskType: TaskType }> {
-  const lastMessage = typeof messages[messages.length - 1]?.content === 'string' 
-    ? messages[messages.length - 1]?.content || ''
-    : '';
+  // Extract text from last message (handle multimodal content)
+  const lastMessageObj = messages[messages.length - 1];
+  let lastMessage = '';
+  if (lastMessageObj?.content) {
+    if (typeof lastMessageObj.content === 'string') {
+      lastMessage = lastMessageObj.content;
+    } else if (Array.isArray(lastMessageObj.content)) {
+      // Extract text from multimodal content
+      const textPart = lastMessageObj.content.find((part: any) => part.type === 'text');
+      lastMessage = textPart?.text || '';
+    }
+  }
   const available = getAvailableProviders();
 
   // User can manually override
   if (context.userOverride) {
     const [provider, model] = context.userOverride.split('/');
-    const overrideProvider = provider as 'groq' | 'openai' | 'anthropic' | 'perplexity';
+    const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity';
     
     // CRITICAL: Prevent using non-vision models with images
     if (context.hasImages && (overrideProvider === 'groq' || overrideProvider === 'perplexity')) {
       throw new Error(
         `Cannot use ${overrideProvider} with images. ` +
-        `Please select Claude 3.5 Sonnet or GPT-4 Turbo for image analysis.`
+        `Please select Kimi K2, Claude 3.5 Sonnet, or another vision-capable model for image analysis.`
       );
     }
     
@@ -281,18 +309,18 @@ export async function routeRequest(
   // Groq and Perplexity do NOT support images
   if (context.hasImages) {
     // Force vision-capable providers only
-    const visionProviders = ['anthropic', 'openai'] as const;
+    const visionProviders = ['kimi', 'anthropic'] as const;
     const availableVision = visionProviders.find(p => available[p]);
     
     if (availableVision) {
-      // Prefer OpenAI GPT-4o for vision (best quality), fallback to Claude
-      const visionConfig: ModelConfig = availableVision === 'openai'
+      // Prefer Kimi K2 for vision (excellent quality and pricing), fallback to Claude
+      const visionConfig: ModelConfig = availableVision === 'kimi'
         ? {
-            provider: 'openai',
-            model: 'gpt-4o', // GPT-4o has excellent vision
+            provider: 'kimi',
+            model: 'moonshot-v1-128k', // Kimi K2 has excellent vision
             maxTokens: 4096,
             temperature: 0.7,
-            costPer1M: 5,
+            costPer1M: 1.2,
           }
         : {
             provider: 'anthropic',
@@ -310,7 +338,7 @@ export async function routeRequest(
       // No vision-capable provider available
       throw new Error(
         'Images detected but no vision-capable model available. ' +
-        'Please add ANTHROPIC_API_KEY or OPENAI_API_KEY to use image analysis.'
+        'Please add KIMI_API_KEY or ANTHROPIC_API_KEY to use image analysis.'
       );
     }
   }

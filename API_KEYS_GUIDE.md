@@ -32,15 +32,32 @@
 
 ## 🟡 RECOMMENDED (Better experience)
 
-### 3. `OPENAI_API_KEY` 
+### 3. `KIMI_API_KEY` ⭐ **RECOMMENDED**
+- **Why**: 
+  - Kimi K2 (moonshot-v1-128k) - Excellent reasoning and vision capabilities
+  - Better quality than Groq for complex tasks
+  - OpenAI-compatible API, easy to integrate
+  - Great pricing compared to OpenAI
+- **Get it**: https://platform.moonshot.cn (Moonshot AI)
+- **Cost**: Pay-as-you-go
+  - Kimi K2: ~$1.2/1M tokens (much cheaper than OpenAI)
+- **Steps**:
+  1. Sign up at platform.moonshot.cn
+  2. Add payment method
+  3. Go to "API Keys"
+  4. Create new secret key
+
+**Without this**: 
+- Complex reasoning tasks will fall back to Groq
+- Vision tasks will fall back to Anthropic (if available)
+
+### 3b. `OPENAI_API_KEY` (Optional - for embeddings only)
 - **Why**: 
   - Better embeddings for RAG (PDF search quality)
-  - Access to GPT-4 for complex reasoning tasks
-  - GPT-4 Vision for image analysis
+  - Note: Kimi doesn't have an embeddings API, so OpenAI is still used for embeddings
 - **Get it**: https://platform.openai.com
 - **Cost**: Pay-as-you-go
   - Embeddings: $0.13/1M tokens
-  - GPT-4 Turbo: $10/1M tokens
 - **Steps**:
   1. Sign up at platform.openai.com
   2. Add payment method
@@ -49,7 +66,6 @@
 
 **Without this**: 
 - RAG will use free client-side embeddings (slower, lower quality)
-- GPT-4 routing won't work (falls back to Groq)
 
 ---
 
@@ -110,7 +126,10 @@ BRAVE_SEARCH_API_KEY=BSA_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # RECOMMENDED - Better experience
 # ============================================
 
-# OpenAI API Key (for embeddings + GPT-4)
+# Kimi API Key (for Kimi K2 - recommended)
+KIMI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# OpenAI API Key (for embeddings only - Kimi doesn't have embeddings API)
 OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # Anthropic API Key (for Claude 3.5)
@@ -166,12 +185,13 @@ This gives you:
 - Brave: FREE 2,000 searches/month
 - **Total: $0/month**
 
-**Recommended Setup (+ OpenAI + Anthropic):**
+**Recommended Setup (+ Kimi + Anthropic):**
 - Groq: FREE tier
 - Brave: FREE
-- OpenAI: ~$1-2/month (embeddings)
+- Kimi: ~$1-2/month (reasoning & vision)
+- OpenAI: ~$0.5-1/month (embeddings only)
 - Anthropic: ~$2-3/month (occasional use)
-- **Total: ~$3-5/month**
+- **Total: ~$3-6/month**
 
 **Full Setup (All features):**
 - Everything above
@@ -196,7 +216,8 @@ After adding keys, test them:
 
 1. **Groq**: Ask any question - should get a response
 2. **Brave Search**: Ask "What's the latest news?" - should search web
-3. **OpenAI**: Upload a PDF and ask about it - should use better embeddings
+3. **Kimi**: Ask a complex reasoning question - should use Kimi K2
+4. **OpenAI**: Upload a PDF and ask about it - should use better embeddings
 4. **Anthropic**: Ask to edit code - should use Claude
 5. **Perplexity**: Ask about current events - should use Perplexity
 

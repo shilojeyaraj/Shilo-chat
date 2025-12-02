@@ -3,9 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus, oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Copy, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { normalizeForClipboard } from '@/lib/utils/text-normalization';
 
 interface MessageContentProps {
   content: string;
@@ -19,7 +23,8 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
 
   const handleCopyCode = async (code: string, index: number) => {
     try {
-      await navigator.clipboard.writeText(code);
+      const normalizedCode = normalizeForClipboard(code);
+      await navigator.clipboard.writeText(normalizedCode);
       setCopiedCodeBlocks((prev) => new Set(prev).add(index));
       setTimeout(() => {
         setCopiedCodeBlocks((prev) => {
@@ -53,7 +58,8 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
   return (
     <div className="message-content prose prose-invert max-w-none">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
         components={{
           // Code blocks with syntax highlighting
           code({ node, inline, className, children, ...props }: any) {
