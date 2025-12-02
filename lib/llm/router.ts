@@ -87,11 +87,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   vision: {
-    provider: 'gemini', // Google Gemini is best for vision/image analysis
-    model: 'gemini-2.0-flash-exp', // Gemini 2.0 Flash for optimal vision performance
+    provider: 'anthropic', // Claude 3.5 Sonnet for vision/image analysis
+    model: 'claude-3-5-sonnet-20240620', // Correct Claude 3.5 Sonnet model
     maxTokens: 8192,
     temperature: 0.7,
-    costPer1M: 0.075, // Gemini is very affordable (free tier available)
+    costPer1M: 3,
   },
   general: {
     provider: 'kimi',
@@ -282,19 +282,19 @@ export async function routeRequest(
     
     // CRITICAL: Prevent using non-vision models with images or files
     // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
-    // Only Gemini and OpenAI support vision
+    // Only Claude and OpenAI support vision
     if ((context.hasImages || (context.fileCount && context.fileCount > 0)) && 
-        (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi' || overrideProvider === 'anthropic')) {
-      // Auto-switch to Gemini (preferred) or OpenAI for vision
-      console.log(`Auto-switching from ${overrideProvider} to Gemini for image/file processing`);
-      if (available.gemini) {
+        (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi' || overrideProvider === 'gemini')) {
+      // Auto-switch to Claude (preferred) or OpenAI for vision
+      console.log(`Auto-switching from ${overrideProvider} to Claude for image/file processing`);
+      if (available.anthropic) {
         return {
           config: {
-            provider: 'gemini',
-            model: 'gemini-2.0-flash-exp',
+            provider: 'anthropic',
+            model: 'claude-3-5-sonnet-20240620', // Correct Claude 3.5 Sonnet model
             maxTokens: 8192,
             temperature: 0.7,
-            costPer1M: 0.075,
+            costPer1M: 3,
           },
           taskType: context.hasImages ? 'vision' : 'long_context',
         };
@@ -312,8 +312,8 @@ export async function routeRequest(
       } else {
         throw new Error(
           `Cannot use ${overrideProvider} with images/files. ` +
-          `Please add GEMINI_API_KEY or OPENAI_API_KEY to use image/file analysis. ` +
-          `Only Gemini and OpenAI support image extraction.`
+          `Please add ANTHROPIC_API_KEY or OPENAI_API_KEY to use image/file analysis. ` +
+          `Only Claude and OpenAI support image extraction.`
         );
       }
     }
@@ -381,21 +381,21 @@ export async function routeRequest(
     }
   }
 
-  // CRITICAL: If images or files are present, MUST use Gemini (preferred) or OpenAI
+  // CRITICAL: If images or files are present, MUST use Claude (preferred) or OpenAI
   // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
-  // Gemini is the preferred choice for vision tasks (better handling of large images)
+  // Claude 3.5 Sonnet is the preferred choice for vision tasks
   if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
-    // Force Gemini (preferred) or OpenAI for vision and file processing
-    if (available.gemini) {
+    // Force Claude (preferred) or OpenAI for vision and file processing
+    if (available.anthropic) {
       const visionConfig: ModelConfig = {
-        provider: 'gemini',
-        model: 'gemini-2.0-flash-exp',
-        maxTokens: 8192, // Gemini handles large images better, can use more tokens
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet-20240620', // Correct Claude 3.5 Sonnet model
+        maxTokens: 8192, // Claude handles large images well
         temperature: 0.7,
-        costPer1M: 0.075,
+        costPer1M: 3,
       };
       
-      console.log(`Using Gemini (gemini-2.0-flash-exp) for image/file processing`);
+      console.log(`Using Claude (claude-3-5-sonnet-20240620) for image/file processing`);
       
       return {
         config: visionConfig,
@@ -410,7 +410,7 @@ export async function routeRequest(
         costPer1M: 5,
       };
       
-      console.log(`Using OpenAI (gpt-4o) for image/file processing (Gemini not available)`);
+      console.log(`Using OpenAI (gpt-4o) for image/file processing (Claude not available)`);
       
       return {
         config: visionConfig,
@@ -420,7 +420,7 @@ export async function routeRequest(
       // No vision-capable provider available
       throw new Error(
         'Images or files detected but no vision-capable model is available. ' +
-        'Please add GEMINI_API_KEY (preferred) or OPENAI_API_KEY to use image/file analysis. ' +
+        'Please add ANTHROPIC_API_KEY (preferred) or OPENAI_API_KEY to use image/file analysis. ' +
         'Kimi K2, Groq, and Perplexity do not support image extraction.'
       );
     }

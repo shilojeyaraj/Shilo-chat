@@ -1413,13 +1413,13 @@ export default function ChatInterface() {
                       const provider = newValue.split('/')[0];
                       
                       // Warn if trying to use non-vision model with images/files
-                      // Only Gemini and OpenAI support images/file extraction
+                      // Only Claude and OpenAI support images/file extraction
                       if ((selectedImages.length > 0 || attachedFiles.length > 0) && 
-                          (provider === 'groq' || provider === 'perplexity' || provider === 'kimi' || provider === 'anthropic')) {
-                        toast.error('Only Gemini and OpenAI support images/files. Auto-selecting Gemini.');
-                        // Auto-select Gemini (preferred) or OpenAI for vision/file processing
+                          (provider === 'groq' || provider === 'perplexity' || provider === 'kimi' || provider === 'gemini')) {
+                        toast.error('Only Claude and OpenAI support images/files. Auto-selecting Claude.');
+                        // Auto-select Claude (preferred) or OpenAI for vision/file processing
                         const visionModel = modelOptions.find(opt => 
-                          opt.value.startsWith('gemini/')
+                          opt.value.startsWith('anthropic/')
                         ) || modelOptions.find(opt => 
                           opt.value.startsWith('openai/')
                         );
@@ -1429,7 +1429,7 @@ export default function ChatInterface() {
                           toast.success(`Switched to ${visionModel.label} (supports images/files)`);
                           return;
                         } else {
-                          toast.error('Gemini or OpenAI not available. Please add GEMINI_API_KEY or OPENAI_API_KEY.');
+                          toast.error('Claude or OpenAI not available. Please add ANTHROPIC_API_KEY or OPENAI_API_KEY.');
                           return;
                         }
                       }
@@ -1440,12 +1440,12 @@ export default function ChatInterface() {
                       toast.success(`Switched to ${selectedLabel}`, { duration: 2000 });
                     }}
                     className={`appearance-none px-3 py-2 pr-8 text-xs font-medium rounded-xl border border-slate-700/50 bg-slate-800/50 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all duration-200 cursor-pointer ${getCurrentModelColor()}`}
-                    title={(selectedImages.length > 0 || attachedFiles.length > 0) ? "Select Gemini (preferred) or OpenAI for image/file processing - Only these support images" : "Select AI model for this conversation (default: Kimi K2)"}
+                    title={(selectedImages.length > 0 || attachedFiles.length > 0) ? "Select Claude (preferred) or OpenAI for image/file processing - Only these support images" : "Select AI model for this conversation (default: Kimi K2)"}
                   >
                     {modelOptions.map((opt) => {
                       const optProvider = opt.value.split('/')[0];
-                      // Only Gemini and OpenAI support vision/file extraction
-                      const supportsVision = optProvider === 'gemini' || optProvider === 'openai' || opt.value === '';
+                      // Only Claude and OpenAI support vision/file extraction
+                      const supportsVision = optProvider === 'anthropic' || optProvider === 'openai' || opt.value === '';
                       const isDisabled = (selectedImages.length > 0 || attachedFiles.length > 0) && !supportsVision && opt.value !== '';
                       
                       return (

@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
     // For now, we'll get it from the request body (client fetches and sends)
     const memoryContext = body.memoryContext || '';
 
-    // Early check: If images/files are present, verify Gemini (preferred) or OpenAI is available
+    // Early check: If images/files are present, verify Claude (preferred) or OpenAI is available
     // Check both files array and message content for images
     const hasImagesInFiles = files.some((f: any) => f.type?.startsWith('image/'));
     const hasImagesInMessages = messages.some((m: any) => {
@@ -177,11 +177,11 @@ export async function POST(req: NextRequest) {
     const fileCount = files.length;
     const available = getAvailableProviders();
     
-    if ((hasImages || fileCount > 0) && !available.gemini && !available.openai) {
+    if ((hasImages || fileCount > 0) && !available.anthropic && !available.openai) {
       return NextResponse.json(
         {
-          error: 'Gemini or OpenAI API key required for image/file analysis',
-          details: 'Images or files were detected, but neither GEMINI_API_KEY nor OPENAI_API_KEY is configured in your Vercel environment variables. Please add your Gemini API key (preferred) or OpenAI API key to enable image/file analysis features.',
+          error: 'Claude or OpenAI API key required for image/file analysis',
+          details: 'Images or files were detected, but neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is configured in your Vercel environment variables. Please add your Claude API key (preferred) or OpenAI API key to enable image/file analysis features.',
           requiresVision: true,
         },
         { status: 400 }
@@ -208,13 +208,12 @@ export async function POST(req: NextRequest) {
 
     // Build optimized context (hot-warm-cold management)
     // For vision tasks with images, adjust context based on provider
-    // Gemini handles large images better, so we can use more context
-    // OpenAI has stricter limits, so we need to be more conservative
+    // Claude handles large images well, OpenAI has stricter limits
     let contextMaxTokens: number;
     if (hasImages) {
-      if (config.provider === 'gemini') {
-        // Gemini handles large images better - can use more context
-        contextMaxTokens = Math.min(8000, config.maxTokens * 0.6);
+      if (config.provider === 'anthropic') {
+        // Claude handles large images well - can use more context
+        contextMaxTokens = Math.min(6000, config.maxTokens * 0.5);
       } else {
         // OpenAI - be very conservative (images are huge in base64)
         contextMaxTokens = Math.min(4000, config.maxTokens * 0.3);
@@ -234,13 +233,13 @@ export async function POST(req: NextRequest) {
     let systemPrompt = getSystemPrompt(taskType, mode, ragContext, toolResults, personalInfoContext, memoryContext);
     
     // Truncate system prompt if it's too large (especially with images)
-    // Gemini handles large images better, so we can keep more context
+    // Claude handles large images well, so we can keep more context
     if (hasImages) {
-      if (config.provider === 'gemini') {
-        // Gemini - can handle larger system prompts
-        if (systemPrompt.length > 4000) {
-          systemPrompt = systemPrompt.substring(0, 4000) + '... [truncated for image processing]';
-          console.warn('System prompt truncated for Gemini image processing');
+      if (config.provider === 'anthropic') {
+        // Claude - can handle larger system prompts
+        if (systemPrompt.length > 3000) {
+          systemPrompt = systemPrompt.substring(0, 3000) + '... [truncated for image processing]';
+          console.warn('System prompt truncated for Claude image processing');
         }
       } else {
         // OpenAI - be more conservative
@@ -256,17 +255,17 @@ export async function POST(req: NextRequest) {
     const userMessages = optimizedMessages.filter((m: any) => m.role !== 'system');
     
     // Limit message history based on provider when images are present
-    // Gemini handles large images better, OpenAI needs stricter limits
+    // Claude handles large images well, OpenAI needs stricter limits
     let finalMessages = userMessages;
     if (hasImages) {
       if (config.provider === 'openai') {
         // OpenAI - be very conservative (images are huge in base64)
         finalMessages = userMessages.slice(-5);
         console.log(`Limiting to last ${finalMessages.length} messages for OpenAI image processing`);
-      } else if (config.provider === 'gemini') {
-        // Gemini - can handle more context with images
-        finalMessages = userMessages.slice(-10);
-        console.log(`Limiting to last ${finalMessages.length} messages for Gemini image processing`);
+      } else if (config.provider === 'anthropic') {
+        // Claude - can handle more context with images
+        finalMessages = userMessages.slice(-8);
+        console.log(`Limiting to last ${finalMessages.length} messages for Claude image processing`);
       }
     }
     
