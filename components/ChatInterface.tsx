@@ -55,11 +55,11 @@ interface CostData {
 
 // Model options will be loaded dynamically based on available providers
 const DEFAULT_MODEL_OPTIONS = [
-  { value: '', label: 'Auto-select (recommended)' },
+  { value: '', label: 'Auto-select (Kimi K2 default)' },
+  { value: 'kimi/moonshot-v1-128k', label: 'Kimi K2 (Default)' },
   { value: 'groq/llama-3.1-8b-instant', label: 'Llama 8B (Fastest)' },
   { value: 'groq/llama-3.3-70b-versatile', label: 'Llama 70B (Balanced)' },
-  { value: 'anthropic/claude-3-5-sonnet-20241022', label: 'Claude 3.5 (Best)' },
-  { value: 'kimi/moonshot-v1-128k', label: 'Kimi K2' },
+  { value: 'anthropic/claude-3-5-sonnet-20241022', label: 'Claude 3.5 (Vision/Files)' },
   { value: 'perplexity/llama-3.1-sonar-large-128k-online', label: 'Perplexity (Search)' },
 ];
 
@@ -871,10 +871,10 @@ export default function ChatInterface() {
   // Get current model display name
   const getCurrentModelDisplay = (): string => {
     if (!userOverride) {
-      return 'Auto-select';
+      return 'Kimi K2 (default)';
     }
     const selectedOption = modelOptions.find(opt => opt.value === userOverride);
-    return selectedOption ? selectedOption.label : 'Auto-select';
+    return selectedOption ? selectedOption.label : 'Kimi K2 (default)';
   };
 
   // Get provider color for current model
@@ -1378,17 +1378,19 @@ export default function ChatInterface() {
                       const newValue = e.target.value;
                       const provider = newValue.split('/')[0];
                       
-                      // Warn if trying to use non-vision model with images
-                      if (selectedImages.length > 0 && (provider === 'groq' || provider === 'perplexity')) {
-                        toast.error('Groq and Perplexity do not support images. Auto-selecting a vision-capable model.');
-                        // Auto-select a vision-capable model
+                      // Warn if trying to use non-vision model with images/files
+                      // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
+                      if ((selectedImages.length > 0 || attachedFiles.length > 0) && 
+                          (provider === 'groq' || provider === 'perplexity' || provider === 'kimi')) {
+                        toast.error('Kimi K2, Groq, and Perplexity do not support images/files. Auto-selecting Claude.');
+                        // Auto-select Claude (Anthropic) for vision/file processing
                         const visionModel = modelOptions.find(opt => 
-                          opt.value.startsWith('kimi/') || opt.value.startsWith('anthropic/')
+                          opt.value.startsWith('anthropic/')
                         );
                         if (visionModel) {
                           setUserOverride(visionModel.value);
                           localStorage.setItem('defaultModel', visionModel.value);
-                          toast.success(`Switched to ${visionModel.label} (supports images)`);
+                          toast.success(`Switched to ${visionModel.label} (supports images/files)`);
                           return;
                         }
                       }
@@ -1399,12 +1401,13 @@ export default function ChatInterface() {
                       toast.success(`Switched to ${selectedLabel}`, { duration: 2000 });
                     }}
                     className={`appearance-none px-3 py-2 pr-8 text-xs font-medium rounded-xl border border-slate-700/50 bg-slate-800/50 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all duration-200 cursor-pointer ${getCurrentModelColor()}`}
-                    title={selectedImages.length > 0 ? "Select a vision-capable model (Kimi or Claude) for image analysis" : "Select AI model for this conversation"}
+                    title={(selectedImages.length > 0 || attachedFiles.length > 0) ? "Select Claude (Anthropic) for image/file processing - Kimi K2 does not support images" : "Select AI model for this conversation (default: Kimi K2)"}
                   >
                     {modelOptions.map((opt) => {
                       const optProvider = opt.value.split('/')[0];
-                      const supportsVision = optProvider === 'kimi' || optProvider === 'anthropic' || opt.value === '';
-                      const isDisabled = selectedImages.length > 0 && !supportsVision && opt.value !== '';
+                      // Only Anthropic (Claude) supports vision/file extraction
+                      const supportsVision = optProvider === 'anthropic' || opt.value === '';
+                      const isDisabled = (selectedImages.length > 0 || attachedFiles.length > 0) && !supportsVision && opt.value !== '';
                       
                       return (
                         <option 
@@ -1413,17 +1416,17 @@ export default function ChatInterface() {
                           className="bg-slate-800 text-white"
                           disabled={isDisabled}
                         >
-                          {opt.label}{selectedImages.length > 0 && !supportsVision && opt.value !== '' ? ' (no vision)' : ''}
+                          {opt.label}{(selectedImages.length > 0 || attachedFiles.length > 0) && !supportsVision && opt.value !== '' ? ' (no vision/files)' : ''}
                         </option>
                       );
                     })}
                   </select>
                   <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                 </div>
-                {selectedImages.length > 0 && userOverride && !userOverride.startsWith('kimi/') && !userOverride.startsWith('anthropic/') && userOverride !== '' && (
+                {(selectedImages.length > 0 || attachedFiles.length > 0) && userOverride && !userOverride.startsWith('anthropic/') && userOverride !== '' && (
                   <span className="text-xs text-orange-400 flex items-center gap-1.5 px-2.5 py-1 bg-orange-500/10 rounded-lg border border-orange-500/20">
                     <ImageIcon className="w-3.5 h-3.5" />
-                    Switch to Kimi/Claude for images
+                    Switch to Claude for images/files
                   </span>
                 )}
               </div>

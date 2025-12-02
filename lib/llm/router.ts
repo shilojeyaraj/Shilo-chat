@@ -87,18 +87,18 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 3,
   },
   vision: {
-    provider: 'kimi', // Kimi K2 supports vision
-    model: 'moonshot-v1-128k', // Kimi K2 has excellent vision capabilities
+    provider: 'anthropic', // Claude supports vision - Kimi K2 does not
+    model: 'claude-3-5-sonnet-20241022', // Claude 3.5 Sonnet for vision/file processing
     maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 1.2, // Kimi pricing
+    costPer1M: 3,
   },
   general: {
-    provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    provider: 'kimi',
+    model: 'moonshot-v1-128k', // Kimi K2 - default model
     maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 0.27,
+    costPer1M: 1.2,
   },
 };
 
@@ -266,12 +266,30 @@ export async function routeRequest(
     const [provider, model] = context.userOverride.split('/');
     const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity';
     
-    // CRITICAL: Prevent using non-vision models with images
-    if (context.hasImages && (overrideProvider === 'groq' || overrideProvider === 'perplexity')) {
-      throw new Error(
-        `Cannot use ${overrideProvider} with images. ` +
-        `Please select Kimi K2, Claude 3.5 Sonnet, or another vision-capable model for image analysis.`
-      );
+    // CRITICAL: Prevent using non-vision models with images or files
+    // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
+    if ((context.hasImages || (context.fileCount && context.fileCount > 0)) && 
+        (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi')) {
+      // Auto-switch to Claude instead of throwing error
+      console.log(`Auto-switching from ${overrideProvider} to Claude for image/file processing`);
+      if (available.anthropic) {
+        return {
+          config: {
+            provider: 'anthropic',
+            model: 'claude-3-5-sonnet-20241022',
+            maxTokens: 8192,
+            temperature: 0.7,
+            costPer1M: 3,
+          },
+          taskType: context.hasImages ? 'vision' : 'long_context',
+        };
+      } else {
+        throw new Error(
+          `Cannot use ${overrideProvider} with images/files. ` +
+          `Please add ANTHROPIC_API_KEY to use image/file analysis. ` +
+          `Kimi K2 does not support image extraction.`
+        );
+      }
     }
     
     // Check if override provider is available
@@ -337,40 +355,34 @@ export async function routeRequest(
     }
   }
 
-  // CRITICAL: If images are present, MUST use vision-capable model
-  // Groq and Perplexity do NOT support images
-  if (context.hasImages) {
-    // Force vision-capable providers only
-    const visionProviders = ['kimi', 'anthropic'] as const;
+  // CRITICAL: If images or files are present, MUST use vision-capable model
+  // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
+  // Use Claude (Anthropic) for vision and file processing
+  if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
+    // Force vision-capable providers only - Claude supports both images and file extraction
+    const visionProviders = ['anthropic'] as const;
     const availableVision = visionProviders.find(p => available[p]);
     
     if (availableVision) {
-      // Prefer Kimi K2 for vision (excellent quality and pricing), fallback to Claude
-      const visionConfig: ModelConfig = availableVision === 'kimi'
-        ? {
-            provider: 'kimi',
-            model: 'moonshot-v1-128k', // Kimi K2 has excellent vision
-            maxTokens: 4096,
-            temperature: 0.7,
-            costPer1M: 1.2,
-          }
-        : {
-            provider: 'anthropic',
-            model: 'claude-3-5-sonnet-20241022',
-            maxTokens: 4096,
-            temperature: 0.7,
-            costPer1M: 3,
-          };
+      // Use Claude for vision and file processing
+      const visionConfig: ModelConfig = {
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet-20241022',
+        maxTokens: 8192, // More tokens for file processing
+        temperature: 0.7,
+        costPer1M: 3,
+      };
       
       return {
         config: visionConfig,
-        taskType: 'vision',
+        taskType: context.hasImages ? 'vision' : 'long_context',
       };
     } else {
       // No vision-capable provider available
       throw new Error(
-        'Images detected but no vision-capable model available. ' +
-        'Please add KIMI_API_KEY or ANTHROPIC_API_KEY to use image analysis.'
+        'Images or files detected but no vision-capable model available. ' +
+        'Please add ANTHROPIC_API_KEY to use image/file analysis. ' +
+        'Kimi K2 does not support image extraction.'
       );
     }
   }
@@ -407,7 +419,21 @@ export async function routeRequest(
   }
 
   const preferredConfig = ROUTING_TABLE[taskType];
-  const config = getConfigWithFallback(preferredConfig, available);
+  
+  // For general tasks, prefer Kimi K2 as default, but fallback gracefully
+  let config = getConfigWithFallback(preferredConfig, available);
+  
+  // If Kimi is not available for general tasks, try other providers
+  if (taskType === 'general' && !available.kimi) {
+    // Fallback order: Groq > Anthropic > Perplexity
+    if (available.groq) {
+      config = getFallbackConfig('groq');
+    } else if (available.anthropic) {
+      config = getFallbackConfig('anthropic');
+    } else if (available.perplexity) {
+      config = getFallbackConfig('perplexity');
+    }
+  }
 
   return {
     config,
