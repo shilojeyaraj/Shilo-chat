@@ -1382,20 +1382,21 @@ export default function ChatInterface() {
                       const provider = newValue.split('/')[0];
                       
                       // Warn if trying to use non-vision model with images/files
-                      // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
+                      // Only OpenAI GPT-4o supports images/file extraction
                       if ((selectedImages.length > 0 || attachedFiles.length > 0) && 
-                          (provider === 'groq' || provider === 'perplexity' || provider === 'kimi')) {
-                        toast.error('Kimi K2, Groq, and Perplexity do not support images/files. Auto-selecting OpenAI (GPT-4o).');
-                        // Auto-select OpenAI (preferred) or Claude (Anthropic) for vision/file processing
+                          (provider === 'groq' || provider === 'perplexity' || provider === 'kimi' || provider === 'anthropic')) {
+                        toast.error('Only OpenAI GPT-4o supports images/files. Auto-selecting GPT-4o.');
+                        // Auto-select OpenAI GPT-4o for vision/file processing
                         const visionModel = modelOptions.find(opt => 
                           opt.value.startsWith('openai/')
-                        ) || modelOptions.find(opt => 
-                          opt.value.startsWith('anthropic/')
                         );
                         if (visionModel) {
                           setUserOverride(visionModel.value);
                           localStorage.setItem('defaultModel', visionModel.value);
                           toast.success(`Switched to ${visionModel.label} (supports images/files)`);
+                          return;
+                        } else {
+                          toast.error('OpenAI GPT-4o not available. Please add OPENAI_API_KEY.');
                           return;
                         }
                       }
@@ -1406,12 +1407,12 @@ export default function ChatInterface() {
                       toast.success(`Switched to ${selectedLabel}`, { duration: 2000 });
                     }}
                     className={`appearance-none px-3 py-2 pr-8 text-xs font-medium rounded-xl border border-slate-700/50 bg-slate-800/50 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all duration-200 cursor-pointer ${getCurrentModelColor()}`}
-                    title={(selectedImages.length > 0 || attachedFiles.length > 0) ? "Select OpenAI (GPT-4o) or Claude (Anthropic) for image/file processing - Kimi K2 does not support images" : "Select AI model for this conversation (default: Kimi K2)"}
+                    title={(selectedImages.length > 0 || attachedFiles.length > 0) ? "Select OpenAI (GPT-4o) for image/file processing - Only GPT-4o supports images" : "Select AI model for this conversation (default: Kimi K2)"}
                   >
                     {modelOptions.map((opt) => {
                       const optProvider = opt.value.split('/')[0];
-                      // OpenAI (GPT-4o) and Anthropic (Claude) support vision/file extraction
-                      const supportsVision = optProvider === 'openai' || optProvider === 'anthropic' || opt.value === '';
+                      // Only OpenAI (GPT-4o) supports vision/file extraction
+                      const supportsVision = optProvider === 'openai' || opt.value === '';
                       const isDisabled = (selectedImages.length > 0 || attachedFiles.length > 0) && !supportsVision && opt.value !== '';
                       
                       return (

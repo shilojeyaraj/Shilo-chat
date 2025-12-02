@@ -275,10 +275,11 @@ export async function routeRequest(
     
     // CRITICAL: Prevent using non-vision models with images or files
     // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
+    // Only OpenAI GPT-4o supports vision (no Claude fallback)
     if ((context.hasImages || (context.fileCount && context.fileCount > 0)) && 
-        (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi')) {
-      // Auto-switch to OpenAI (preferred) or Claude for vision
-      console.log(`Auto-switching from ${overrideProvider} to OpenAI/Claude for image/file processing`);
+        (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi' || overrideProvider === 'anthropic')) {
+      // Auto-switch to OpenAI GPT-4o for vision
+      console.log(`Auto-switching from ${overrideProvider} to OpenAI GPT-4o for image/file processing`);
       if (available.openai) {
         return {
           config: {
@@ -290,22 +291,11 @@ export async function routeRequest(
           },
           taskType: context.hasImages ? 'vision' : 'long_context',
         };
-      } else if (available.anthropic) {
-        return {
-          config: {
-            provider: 'anthropic',
-            model: 'claude-3-5-sonnet-20240620',
-            maxTokens: 8192,
-            temperature: 0.7,
-            costPer1M: 3,
-          },
-          taskType: context.hasImages ? 'vision' : 'long_context',
-        };
       } else {
         throw new Error(
           `Cannot use ${overrideProvider} with images/files. ` +
-          `Please add OPENAI_API_KEY or ANTHROPIC_API_KEY to use image/file analysis. ` +
-          `Kimi K2 does not support image extraction.`
+          `Please add OPENAI_API_KEY to use image/file analysis. ` +
+          `Only OpenAI GPT-4o supports image extraction.`
         );
       }
     }
@@ -373,42 +363,32 @@ export async function routeRequest(
     }
   }
 
-  // CRITICAL: If images or files are present, MUST use vision-capable model
+  // CRITICAL: If images or files are present, MUST use OpenAI GPT-4o
   // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
-  // Prioritize OpenAI (GPT-4o) for vision, fallback to Claude (Anthropic)
+  // Only OpenAI GPT-4o is used for vision tasks (no Claude fallback)
   if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
-    // Force vision-capable providers only - OpenAI (preferred) or Anthropic
-    const visionProviders = ['openai', 'anthropic'] as const;
-    const availableVision = visionProviders.find(p => available[p]);
-    
-    if (availableVision) {
-      // Use OpenAI GPT-4o (preferred) or Claude for vision and file processing
-      const visionConfig: ModelConfig = availableVision === 'openai' ? {
+    // Force OpenAI GPT-4o for vision and file processing
+    if (available.openai) {
+      const visionConfig: ModelConfig = {
         provider: 'openai',
         model: 'gpt-4o',
         maxTokens: 8192, // More tokens for file processing
         temperature: 0.7,
         costPer1M: 5,
-      } : {
-        provider: 'anthropic',
-        model: 'claude-3-5-sonnet-20240620',
-        maxTokens: 8192, // More tokens for file processing
-        temperature: 0.7,
-        costPer1M: 3,
       };
       
-      console.log(`Using ${availableVision} (${visionConfig.model}) for image/file processing`);
+      console.log(`Using OpenAI (gpt-4o) for image/file processing`);
       
       return {
         config: visionConfig,
         taskType: context.hasImages ? 'vision' : 'long_context',
       };
     } else {
-      // No vision-capable provider available
+      // No OpenAI available
       throw new Error(
-        'Images or files detected but no vision-capable model available. ' +
-        'Please add OPENAI_API_KEY or ANTHROPIC_API_KEY to use image/file analysis. ' +
-        'Kimi K2 does not support image extraction.'
+        'Images or files detected but OpenAI GPT-4o is not available. ' +
+        'Please add OPENAI_API_KEY to use image/file analysis. ' +
+        'Kimi K2, Groq, and Perplexity do not support image extraction.'
       );
     }
   }
