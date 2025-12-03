@@ -16,8 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={inter.className}>
+    <html lang="en" className="dark h-full overflow-hidden">
+      <body className={`${inter.className} h-full overflow-hidden`}>
         {children}
         <Toaster position="top-right" />
       </body>

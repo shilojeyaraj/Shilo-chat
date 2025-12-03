@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar, ChevronDown } from 'lucide-react';
+import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar, ChevronDown, CheckSquare, Square, ArrowDown, AlertTriangle } from 'lucide-react';
 import MessageContent from './MessageContent';
 import toast from 'react-hot-toast';
 import PdfUpload from './PdfUpload';
@@ -111,6 +111,8 @@ export default function ChatInterface() {
   const [mode, setMode] = useState<'primary' | 'coding'>('primary');
   const [showFundingError, setShowFundingError] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ file: File; preview?: string; type: string; name: string }>>([]);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  const [selectedConversations, setSelectedConversations] = useState<Set<string>>(new Set());
   const [remainingMessages, setRemainingMessages] = useState(0); // Initialize to 0 to avoid hydration mismatch
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [deepWebSearch, setDeepWebSearch] = useState(false);
@@ -145,6 +147,13 @@ export default function ChatInterface() {
     }
   }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageContent, setEditingMessageContent] = useState('');
+  const [monthlyBudget, setMonthlyBudget] = useState<number | null>(null);
+  const [budgetAlertsShown, setBudgetAlertsShown] = useState<Set<number>>(new Set());
 
   // Auto-resize textarea based on content (expands up to 1/3 of viewport height)
   useEffect(() => {
@@ -166,13 +175,75 @@ export default function ChatInterface() {
     }
   }, [input]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Check if user is at bottom of messages
+  const checkIfAtBottom = () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    
+    const threshold = 100; // 100px threshold
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+    setIsAtBottom(isNearBottom);
+    setShowScrollButton(!isNearBottom && container.scrollHeight > container.clientHeight);
   };
 
+  const scrollToBottom = (smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  };
+
+  // Only auto-scroll if user is at bottom
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (isAtBottom && messages.length > 0) {
+      // Small delay to ensure DOM is updated
+      setTimeout(() => scrollToBottom(true), 100);
+    }
+  }, [messages, isAtBottom]);
+
+  // Load budget from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('monthlyBudget');
+      if (stored) {
+        try {
+          setMonthlyBudget(parseFloat(stored));
+        } catch (error) {
+          console.error('Failed to parse budget:', error);
+        }
+      }
+    }
+  }, []);
+
+  // Check budget and show alerts
+  useEffect(() => {
+    if (monthlyBudget && costData.monthly > 0) {
+      const percentage = (costData.monthly / monthlyBudget) * 100;
+      const thresholds = [50, 75, 90, 100];
+      
+      thresholds.forEach(threshold => {
+        if (percentage >= threshold && !budgetAlertsShown.has(threshold)) {
+          const newAlerts = new Set(budgetAlertsShown);
+          newAlerts.add(threshold);
+          setBudgetAlertsShown(newAlerts);
+          
+          if (threshold === 100) {
+            toast.error(
+              `Budget exceeded! Monthly spending: $${costData.monthly.toFixed(2)} / $${monthlyBudget.toFixed(2)}`,
+              { duration: 8000, icon: '⚠️' }
+            );
+          } else if (threshold === 90) {
+            toast.error(
+              `Budget 90% used! $${costData.monthly.toFixed(2)} / $${monthlyBudget.toFixed(2)}`,
+              { duration: 6000, icon: '⚠️' }
+            );
+          } else {
+            toast(
+              `Budget ${threshold}% used: $${costData.monthly.toFixed(2)} / $${monthlyBudget.toFixed(2)}`,
+              { duration: 4000, icon: '💰' }
+            );
+          }
+        }
+      });
+    }
+  }, [costData.monthly, monthlyBudget, budgetAlertsShown]);
 
   // Load available providers on mount
   useEffect(() => {
@@ -268,8 +339,66 @@ export default function ChatInterface() {
   // Delete conversation
   const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setConversationToDelete(conversationId);
-    setShowDeleteConfirm(true);
+    if (multiSelectMode) {
+      // Toggle selection in multi-select mode
+      setSelectedConversations(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(conversationId)) {
+          newSet.delete(conversationId);
+        } else {
+          newSet.add(conversationId);
+        }
+        return newSet;
+      });
+    } else {
+      // Single delete mode
+      setConversationToDelete(conversationId);
+      setShowDeleteConfirm(true);
+    }
+  };
+
+  // Bulk delete conversations
+  const handleBulkDelete = async () => {
+    if (selectedConversations.size === 0) return;
+    
+    const count = selectedConversations.size;
+    const idsToDelete = Array.from(selectedConversations);
+    
+    try {
+      // Delete all selected conversations
+      for (const id of idsToDelete) {
+        await deleteConversation(id);
+        if (currentConversationId === id) {
+          setCurrentConversationId(null);
+          setMessages([]);
+        }
+      }
+      
+      // Clear selection and exit multi-select mode
+      setSelectedConversations(new Set());
+      setMultiSelectMode(false);
+      await loadConversations();
+      toast.success(`${count} conversation${count > 1 ? 's' : ''} deleted`);
+    } catch (error) {
+      console.error('Failed to delete conversations:', error);
+      toast.error('Failed to delete some conversations');
+    }
+  };
+
+  // Toggle select all
+  const handleSelectAll = () => {
+    const visibleConversations = searchQuery ? filteredConversations : conversations.slice(0, 10);
+    if (selectedConversations.size === visibleConversations.length) {
+      setSelectedConversations(new Set());
+    } else {
+      setSelectedConversations(new Set(visibleConversations.map(c => c.conversationId)));
+    }
+  };
+
+  // Toggle multi-select mode
+  const toggleMultiSelectMode = () => {
+    setMultiSelectMode(!multiSelectMode);
+    setSelectedConversations(new Set());
   };
 
   const confirmDeleteConversation = async () => {
@@ -932,7 +1061,7 @@ export default function ChatInterface() {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+    <div className="flex h-screen w-screen fixed top-0 left-0 right-0 bottom-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-hidden">
       {/* Left Sidebar */}
       <div className="w-64 bg-slate-900/80 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl">
         {/* New Chat Button */}
@@ -948,9 +1077,24 @@ export default function ChatInterface() {
 
         {/* Recent Conversations */}
         <div className="flex-1 overflow-y-auto p-4">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">
-            RECENT
-          </h2>
+          <div className="flex items-center justify-between mb-3 px-2">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              RECENT
+            </h2>
+            {conversations.length > 0 && (
+              <button
+                onClick={toggleMultiSelectMode}
+                className={`px-2 py-1 text-xs rounded-lg transition-all duration-200 ${
+                  multiSelectMode
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    : 'text-slate-400 hover:text-slate-300 hover:bg-slate-800/50'
+                }`}
+                title={multiSelectMode ? 'Exit multi-select' : 'Select multiple'}
+              >
+                {multiSelectMode ? 'Cancel' : 'Select'}
+              </button>
+            )}
+          </div>
           {conversations.length > 0 && (
             <div className="mb-3 px-2">
               <input
@@ -962,14 +1106,39 @@ export default function ChatInterface() {
               />
             </div>
           )}
+          {multiSelectMode && conversations.length > 0 && (
+            <div className="mb-3 px-2 flex items-center gap-2">
+              <button
+                onClick={handleSelectAll}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs text-slate-300 hover:text-white hover:bg-slate-800/50 rounded-lg transition-all duration-200"
+              >
+                {(searchQuery ? filteredConversations : conversations.slice(0, 10)).length > 0 &&
+                 selectedConversations.size === (searchQuery ? filteredConversations : conversations.slice(0, 10)).length ? (
+                  <CheckSquare className="w-3.5 h-3.5" />
+                ) : (
+                  <Square className="w-3.5 h-3.5" />
+                )}
+                Select All
+              </button>
+              {selectedConversations.size > 0 && (
+                <span className="text-xs text-slate-400">
+                  {selectedConversations.size} selected
+                </span>
+              )}
+            </div>
+          )}
           <div className="space-y-1.5">
-            {(searchQuery ? filteredConversations : conversations.slice(0, 10)).map((conv) => (
+            {(searchQuery ? filteredConversations : conversations.slice(0, 10)).map((conv) => {
+              const isSelected = selectedConversations.has(conv.conversationId);
+              return (
               <div
                 key={conv.conversationId}
                 className={`
                   group px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer
-                  ${currentConversationId === conv.conversationId
+                  ${currentConversationId === conv.conversationId && !multiSelectMode
                     ? 'bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 shadow-lg shadow-indigo-500/10'
+                    : isSelected
+                    ? 'bg-indigo-600/20 border border-indigo-500/50'
                     : 'hover:bg-slate-800/50 border border-transparent hover:border-slate-700/50'
                   }
                 `}
@@ -1003,37 +1172,54 @@ export default function ChatInterface() {
                   </div>
                 ) : (
                   <>
-                    <div 
-                      onClick={() => handleLoadConversation(conv.conversationId)}
-                      className="cursor-pointer"
-                    >
-                      <div className="text-sm font-medium text-white truncate mb-1">
-                        {conv.title}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {formatConversationTime(conv.updatedAt)}
+                    <div className="flex items-start gap-2">
+                      {multiSelectMode && (
+                        <button
+                          onClick={(e) => handleDeleteConversation(conv.conversationId, e)}
+                          className="mt-1 p-1 text-slate-400 hover:text-indigo-400 transition-all duration-200"
+                        >
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-indigo-400" />
+                          ) : (
+                            <Square className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+                      <div 
+                        onClick={() => !multiSelectMode && handleLoadConversation(conv.conversationId)}
+                        className={`flex-1 ${!multiSelectMode ? 'cursor-pointer' : ''}`}
+                      >
+                        <div className="text-sm font-medium text-white truncate mb-1">
+                          {conv.title}
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {formatConversationTime(conv.updatedAt)}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                      <button
-                        onClick={(e) => handleStartEditTitle(conv, e)}
-                        className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all duration-200"
-                        title="Edit title"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => handleDeleteConversation(conv.conversationId, e)}
-                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
-                        title="Delete conversation"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {!multiSelectMode && (
+                      <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                        <button
+                          onClick={(e) => handleStartEditTitle(conv, e)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all duration-200"
+                          title="Edit title"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteConversation(conv.conversationId, e)}
+                          className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200"
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
-            ))}
+            );
+            })}
             {conversations.length === 0 && (
               <div className="text-xs text-slate-500 text-center py-4">
                 No conversations yet
@@ -1044,6 +1230,15 @@ export default function ChatInterface() {
 
         {/* Actions */}
         <div className="p-4 border-t border-slate-800/50 space-y-1.5">
+          {multiSelectMode && selectedConversations.size > 0 && (
+            <button 
+              onClick={handleBulkDelete}
+              className="flex items-center gap-2.5 text-sm text-white bg-red-600 hover:bg-red-700 px-3 py-2 rounded-xl transition-all duration-200 w-full group font-medium"
+            >
+              <Trash2 className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
+              Delete {selectedConversations.size} Conversation{selectedConversations.size > 1 ? 's' : ''}
+            </button>
+          )}
           <button 
             onClick={() => {
               if (messages.length === 0) {
@@ -1185,7 +1380,25 @@ export default function ChatInterface() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+        <div 
+          ref={messagesContainerRef}
+          onScroll={checkIfAtBottom}
+          className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-6 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 relative"
+        >
+          {/* Scroll to bottom button */}
+          {showScrollButton && (
+            <button
+              onClick={() => {
+                scrollToBottom(true);
+                setIsAtBottom(true);
+                setShowScrollButton(false);
+              }}
+              className="fixed bottom-24 right-8 z-50 p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center gap-2"
+              title="Scroll to bottom"
+            >
+              <ArrowDown className="w-5 h-5" />
+            </button>
+          )}
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
               <div className="text-center max-w-md">
@@ -1219,7 +1432,71 @@ export default function ChatInterface() {
               key={message.id}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}
             >
-              <div className="max-w-2xl relative">
+              <div className="max-w-2xl relative w-full">
+                {editingMessageId === message.id && message.role === 'user' ? (
+                  <div className="rounded-2xl px-5 py-4 shadow-lg bg-slate-800/90 backdrop-blur-sm border border-indigo-500/50">
+                    <textarea
+                      value={editingMessageContent}
+                      onChange={(e) => setEditingMessageContent(e.target.value)}
+                      className="w-full bg-transparent text-white resize-none focus:outline-none mb-3 min-h-[60px]"
+                      rows={Math.min(editingMessageContent.split('\n').length + 1, 10)}
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setEditingMessageId(null);
+                          setEditingMessageContent('');
+                        }
+                      }}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!editingMessageContent.trim()) return;
+                          
+                          const editedContent = editingMessageContent;
+                          setEditingMessageId(null);
+                          setEditingMessageContent('');
+                          
+                          // Remove the old assistant response if it exists
+                          if (msgIndex < messages.length - 1 && messages[msgIndex + 1].role === 'assistant') {
+                            setMessages(prev => prev.slice(0, msgIndex + 1));
+                          }
+                          
+                          // Update the message content
+                          setMessages(prev => {
+                            const updated = [...prev];
+                            updated[msgIndex] = { ...updated[msgIndex], content: editedContent };
+                            return updated;
+                          });
+                          
+                          // Set input and trigger send
+                          setInput(editedContent);
+                          // Use a small delay to ensure state is updated
+                          await new Promise(resolve => setTimeout(resolve, 50));
+                          
+                          // Manually trigger handleSend
+                          const event = new Event('click');
+                          const sendButton = document.querySelector('[data-send-button]') as HTMLButtonElement;
+                          if (sendButton && !sendButton.disabled) {
+                            sendButton.click();
+                          }
+                        }}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
+                      >
+                        Save & Resend
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingMessageId(null);
+                          setEditingMessageContent('');
+                        }}
+                        className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                 <div
                   className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-200 ${
                     message.role === 'user'
@@ -1248,6 +1525,7 @@ export default function ChatInterface() {
                     />
                   )}
                 </div>
+                )}
                 {/* Message actions */}
                 <div className={`flex items-center gap-2 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <button
@@ -1261,6 +1539,19 @@ export default function ChatInterface() {
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
+                  {message.role === 'user' && (
+                    <button
+                      onClick={() => {
+                        setEditingMessageId(message.id);
+                        setEditingMessageContent(message.content || '');
+                      }}
+                      className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-indigo-400 transition-colors"
+                      title="Edit message"
+                      disabled={isLoading || editingMessageId !== null}
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {message.role === 'assistant' && (
                     <button
                       onClick={async () => {
@@ -1401,7 +1692,8 @@ export default function ChatInterface() {
             </div>
           )}
 
-          <div ref={messagesEndRef} />
+          {/* Invisible anchor for scrolling - no height */}
+          <div ref={messagesEndRef} className="h-0" />
         </div>
 
         {/* Input Area */}
@@ -1593,7 +1885,8 @@ export default function ChatInterface() {
               
               <button
                 onClick={handleSend}
-                disabled={isLoading || (!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || !canSendMessage()}
+                disabled={isLoading || (!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || !canSendMessage() || editingMessageId !== null}
+                data-send-button
                 className="w-12 h-12 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:via-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 disabled:hover:scale-100"
                 title={!canSendMessage() ? 'Daily limit reached. Upgrade to continue.' : 'Send message'}
               >
@@ -1812,6 +2105,39 @@ export default function ChatInterface() {
                   </label>
                   <p className="text-xs text-gray-400 mt-1">
                     Use uploaded documents to enhance responses
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Monthly Budget ($)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={monthlyBudget || ''}
+                    onChange={(e) => {
+                      const value = e.target.value ? parseFloat(e.target.value) : null;
+                      setMonthlyBudget(value);
+                      if (value !== null) {
+                        localStorage.setItem('monthlyBudget', value.toString());
+                        setBudgetAlertsShown(new Set()); // Reset alerts when budget changes
+                        toast.success('Budget updated');
+                      } else {
+                        localStorage.removeItem('monthlyBudget');
+                      }
+                    }}
+                    placeholder="No limit"
+                    className="w-full px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Set a monthly spending limit. You'll receive alerts at 50%, 75%, 90%, and 100%.
+                    {monthlyBudget && costData.monthly > 0 && (
+                      <span className="block mt-1 text-yellow-400">
+                        Current: ${costData.monthly.toFixed(2)} / ${monthlyBudget.toFixed(2)} ({((costData.monthly / monthlyBudget) * 100).toFixed(1)}%)
+                      </span>
+                    )}
                   </p>
                 </div>
 
