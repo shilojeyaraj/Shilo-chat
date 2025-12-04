@@ -94,11 +94,11 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     costPer1M: 0.8, // Haiku: $0.80/1M input, $4/1M output (vs Sonnet $3/$15)
   },
   general: {
-    provider: 'kimi',
-    model: 'moonshot-v1-128k', // Kimi K2 - default model
+    provider: 'groq', // Try Groq first, fallback to Kimi if quality is low
+    model: 'llama-3.1-8b-instant', // Fast and cheap for initial attempt
     maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 1.2,
+    costPer1M: 0.05, // Groq pricing
   },
 };
 

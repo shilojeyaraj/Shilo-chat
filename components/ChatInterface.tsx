@@ -41,6 +41,17 @@ interface Message {
     providerName?: string;
     toolsUsed?: string[];
     costPer1M?: number;
+    usedFallback?: boolean;
+    fallbackReason?: string;
+    fallbackUsage?: {
+      provider: string;
+      usage: {
+        promptTokens?: number;
+        completionTokens?: number;
+        totalTokens?: number;
+      };
+      cost: number;
+    };
     usage?: {
       promptTokens?: number;
       completionTokens?: number;
@@ -828,8 +839,17 @@ export default function ChatInterface() {
                     providerName: parsed.providerName,
                     toolsUsed: parsed.toolsUsed || [],
                     costPer1M: parsed.costPer1M,
+                    usedFallback: parsed.usedFallback,
+                    fallbackReason: parsed.fallbackReason,
                   };
                   setActiveTools(parsed.toolsUsed || []);
+
+                  // Show notification if fallback was used
+                  if (parsed.usedFallback && parsed.fallbackReason) {
+                    toast.success(`Upgraded to ${parsed.providerName} for better quality`, {
+                      duration: 3000,
+                    });
+                  }
 
                   // Update UI
                   setMessages((prev) => {
@@ -859,6 +879,28 @@ export default function ChatInterface() {
                   assistantMessage.metadata = {
                     ...assistantMessage.metadata,
                     usage: parsed.usage,
+                  };
+                } else if (parsed.type === 'fallback_usage' && parsed.usage) {
+                  // Track usage from the initial Groq attempt (for cost calculation)
+                  // This is the cost of the failed Groq attempt
+                  const groqTokens = parsed.usage.totalTokens || 0;
+                  const groqCost = estimateCost(groqTokens, parsed.costPer1M || 0.05);
+                  
+                  // Add to cost tracking
+                  setCostData((prev) => ({
+                    ...prev,
+                    session: prev.session + groqCost,
+                    monthly: prev.monthly + groqCost,
+                  }));
+
+                  // Store fallback usage in metadata
+                  assistantMessage.metadata = {
+                    ...assistantMessage.metadata,
+                    fallbackUsage: {
+                      provider: parsed.provider,
+                      usage: parsed.usage,
+                      cost: groqCost,
+                    },
                   };
                 }
               } catch (e) {
@@ -1327,7 +1369,7 @@ export default function ChatInterface() {
         <div className="bg-slate-900/40 backdrop-blur-xl border-b border-slate-800/50 px-6 py-4 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400 bg-clip-text text-transparent">
-              Shilo Chat
+              Mid Chats
             </h1>
             <div className="flex items-center gap-4">
               <span className="text-sm text-slate-400">
@@ -1523,6 +1565,17 @@ export default function ChatInterface() {
                       content={message.content} 
                       isCodingMode={mode === 'coding'}
                     />
+                  )}
+                  {/* Fallback indicator */}
+                  {message.metadata?.usedFallback && (
+                    <div className="mt-3 pt-3 border-t border-slate-700/50">
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>
+                          Upgraded to <span className="text-indigo-400 font-medium">{message.metadata.providerName || 'Kimi K2'}</span> for better quality
+                        </span>
+                      </div>
+                    </div>
                   )}
                 </div>
                 )}

@@ -6,7 +6,7 @@ import { Toaster } from 'react-hot-toast';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Shilo Chat - Personalized AI Assistant',
+  title: 'mid chats - Personalized AI Assistant',
   description: 'Your personal AI assistant with RAG, code editing, and more',
 };
 

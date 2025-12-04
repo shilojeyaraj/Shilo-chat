@@ -7,6 +7,7 @@ import { Message } from '@/lib/llm/types';
 import { searchRelevantChunks } from '@/lib/utils/search';
 import { getCodingPrompt } from '@/lib/prompts/coding-mode';
 import { buildOptimizedContext, ConversationMessage } from '@/lib/utils/conversation-manager';
+import { assessResponseQuality } from '@/lib/utils/quality-assessor';
 // Personal info is now fetched on client side and passed in the request body
 // Removed import since we no longer access IndexedDB from server
 
@@ -342,20 +343,97 @@ export async function POST(req: NextRequest) {
         .filter((m): m is Message => m !== null), // Remove null entries with type guard
     ];
 
-    // Step 7: Get provider and stream response
-    const provider = providers[config.provider];
-    if (!provider) {
+    // Step 7: Quality-based fallback logic for Groq responses
+    // For general/quick_qa tasks using Groq, try Groq first, then fallback to Kimi if quality is low
+    const available = getAvailableProviders();
+    const shouldTryFallback = 
+      (taskType === 'general' || taskType === 'quick_qa' || taskType === 'reasoning') &&
+      config.provider === 'groq' &&
+      available.groq &&
+      available.kimi &&
+      !userOverride; // Don't override if user manually selected a model
+
+    let finalConfig = config;
+    let finalProvider = providers[config.provider];
+    let groqResponse: string = '';
+    let groqUsage: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
+    let usedFallback = false;
+
+    // Try Groq first if fallback is enabled
+    if (shouldTryFallback) {
+      try {
+        const groqProvider = providers.groq;
+        if (groqProvider && groqProvider.isAvailable()) {
+          // Make a fast non-streaming call to Groq
+          const groqResult = await groqProvider.call(enhancedMessages, {
+            model: config.model,
+            temperature: config.temperature,
+            maxTokens: Math.min(config.maxTokens, 2048), // Limit tokens for fast assessment
+            stream: false,
+          });
+
+          groqResponse = groqResult.content || '';
+          groqUsage = groqResult.usage || null;
+
+          // Assess quality
+          const qualityAssessment = assessResponseQuality(
+            lastMessage,
+            groqResponse,
+            taskType
+          );
+
+          console.log(`Groq quality assessment: ${qualityAssessment.quality}/10, fallback: ${qualityAssessment.shouldFallback}, reasons: ${qualityAssessment.reasons.join(', ')}`);
+
+          // If quality is sufficient, use Groq response
+          if (!qualityAssessment.shouldFallback) {
+            // Groq response is good, we'll stream it
+            finalConfig = config;
+            finalProvider = groqProvider;
+          } else {
+            // Quality is insufficient, fallback to Kimi
+            console.log(`Groq response quality insufficient (${qualityAssessment.quality}/10), falling back to Kimi K2`);
+            usedFallback = true;
+            finalConfig = {
+              provider: 'kimi',
+              model: 'moonshot-v1-128k',
+              maxTokens: 4096,
+              temperature: 0.7,
+              costPer1M: 1.2,
+            };
+            finalProvider = providers.kimi;
+          }
+        }
+      } catch (error) {
+        console.error('Groq quality check failed, using fallback:', error);
+        // If Groq fails, fallback to Kimi
+        usedFallback = true;
+        finalConfig = {
+          provider: 'kimi',
+          model: 'moonshot-v1-128k',
+          maxTokens: 4096,
+          temperature: 0.7,
+          costPer1M: 1.2,
+        };
+        finalProvider = providers.kimi;
+      }
+    } else {
+      // No fallback needed, use original config
+      finalProvider = providers[config.provider];
+    }
+
+    // Validate final provider
+    if (!finalProvider) {
       return NextResponse.json(
-        { error: `Provider ${config.provider} not found` },
+        { error: `Provider ${finalConfig.provider} not found` },
         { status: 400 }
       );
     }
 
     // Check if provider is available (has API key)
-    if (!provider.isAvailable()) {
+    if (!finalProvider.isAvailable()) {
       return NextResponse.json(
         { 
-          error: `Provider ${config.provider} is not configured. Please add ${config.provider.toUpperCase()}_API_KEY to your environment variables.`,
+          error: `Provider ${finalConfig.provider} is not configured. Please add ${finalConfig.provider.toUpperCase()}_API_KEY to your environment variables.`,
           availableProviders: Object.entries(providers)
             .filter(([_, p]) => p.isAvailable())
             .map(([key, _]) => key)
@@ -372,45 +450,89 @@ export async function POST(req: NextRequest) {
           const metadata = {
             type: 'metadata',
             taskType,
-            model: config.model,
-            provider: config.provider,
-            providerName: provider.name,
+            model: finalConfig.model,
+            provider: finalConfig.provider,
+            providerName: finalProvider.name,
             toolsUsed: requiredTools,
-            costPer1M: config.costPer1M,
+            costPer1M: finalConfig.costPer1M,
+            usedFallback, // Indicate if fallback was used
+            fallbackReason: usedFallback ? 'Quality assessment triggered upgrade to Kimi K2' : undefined,
           };
           controller.enqueue(
             new TextEncoder().encode(`data: ${JSON.stringify(metadata)}\n\n`)
           );
 
-          // Stream the actual response and capture usage
-          let usageData: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
-          
-          for await (const chunk of provider.streamCall(enhancedMessages, {
-            model: config.model,
-            temperature: config.temperature,
-            maxTokens: config.maxTokens,
-            stream: true,
-          })) {
-            // Check if chunk contains usage data (some providers send it)
-            if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
-              usageData = (chunk as any).usage;
-              continue; // Skip usage data chunks, they're not content
+          // If we already have a good Groq response, stream it word-by-word for better UX
+          if (!usedFallback && groqResponse && groqResponse.length > 0) {
+            // Stream the Groq response we already have (word-by-word for smooth UX)
+            const words = groqResponse.split(/(\s+)/);
+            for (const word of words) {
+              if (word.trim()) {
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ type: 'content', content: word })}\n\n`
+                  )
+                );
+                // Small delay for smooth streaming effect
+                await new Promise(resolve => setTimeout(resolve, 10));
+              } else {
+                // Include whitespace
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ type: 'content', content: word })}\n\n`
+                  )
+                );
+              }
             }
-            
-            controller.enqueue(
-              new TextEncoder().encode(
-                `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
-              )
-            );
-          }
 
-          // Send usage data if available
-          if (usageData) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                `data: ${JSON.stringify({ type: 'usage', usage: usageData })}\n\n`
-              )
-            );
+            // Send usage data
+            if (groqUsage) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ type: 'usage', usage: groqUsage })}\n\n`
+                )
+              );
+            }
+          } else {
+            // Stream the actual response (either Groq or Kimi)
+            let usageData: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
+            
+            for await (const chunk of finalProvider.streamCall(enhancedMessages, {
+              model: finalConfig.model,
+              temperature: finalConfig.temperature,
+              maxTokens: finalConfig.maxTokens,
+              stream: true,
+            })) {
+              // Check if chunk contains usage data (some providers send it)
+              if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
+                usageData = (chunk as any).usage;
+                continue; // Skip usage data chunks, they're not content
+              }
+              
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
+                )
+              );
+            }
+
+            // Send usage data if available
+            if (usageData) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ type: 'usage', usage: usageData })}\n\n`
+                )
+              );
+            }
+
+            // If we used fallback, also send Groq usage for cost tracking
+            if (usedFallback && groqUsage) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({ type: 'fallback_usage', usage: groqUsage, provider: 'groq', costPer1M: config.costPer1M })}\n\n`
+                )
+              );
+            }
           }
 
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));

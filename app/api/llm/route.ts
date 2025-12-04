@@ -58,7 +58,7 @@ CRITICAL BEHAVIORS:
       headers = {
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || '',
-        'X-Title': 'Shilo Chat',
+        'X-Title': 'Mid Chats',
         'Content-Type': 'application/json',
       };
     }
