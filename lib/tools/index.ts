@@ -230,20 +230,6 @@ const parseFileTool: Tool = {
   },
 };
 
-/**
- * Parse PDF Tool - Legacy tool for backward compatibility
- */
-const parsePdfTool: Tool = {
-  name: 'parse_pdf',
-  description: 'Extract and read text content from PDF files (legacy - use parse_file for all formats)',
-  parameters: {
-    file_path: 'string - path to PDF file or file data',
-  },
-  execute: async ({ file_path, file_data }, context) => {
-    // Delegate to parse_file tool
-    return parseFileTool.execute({ file_path, file_data, file_type: 'application/pdf' }, context);
-  },
-};
 
 /**
  * Analyze CSV Tool - Parse and analyze CSV data
@@ -394,7 +380,6 @@ const fetchWebpageTool: Tool = {
 export const tools: Tool[] = [
   webSearchTool,
   parseFileTool,
-  parsePdfTool, // Keep for backward compatibility
   analyzeCsvTool,
   codeInterpreterTool,
   fetchWebpageTool,

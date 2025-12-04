@@ -89,59 +89,29 @@ export function incrementMessageCount(): UsageData {
 
 /**
  * Check if user can send messages (hasn't hit limit)
+ * @deprecated Message limits removed - always returns true
  */
 export function canSendMessage(): boolean {
-  const usage = getUsageData();
-  
-  // Check subscription status
-  if (usage.subscriptionTier !== 'free' && usage.subscriptionStatus === 'active') {
-    // Check if subscription is still valid
-    if (usage.subscriptionEndDate) {
-      const endDate = new Date(usage.subscriptionEndDate);
-      if (endDate < new Date()) {
-        // Subscription expired, revert to free tier
-        const updatedUsage = {
-          ...usage,
-          subscriptionTier: 'free' as const,
-          subscriptionStatus: null,
-          subscriptionEndDate: null,
-        };
-        saveUsageData(updatedUsage);
-        return updatedUsage.dailyMessages < FREE_TIER_LIMIT;
-      }
-    }
-    // Active subscription: check tier limits
-    const limit = getMessageLimit();
-    return usage.dailyMessages < limit;
-  }
-
-  // Free tier: no limit for personal use
-  return true; // Always allow messages
+  // Message limits removed for personal use
+  return true;
 }
 
 /**
  * Get remaining messages for today
+ * @deprecated Message limits removed - always returns Infinity
  */
 export function getRemainingMessages(): number {
-  const usage = getUsageData();
-  
-  if (usage.subscriptionTier !== 'free' && usage.subscriptionStatus === 'active') {
-    return Infinity; // Unlimited for paid tiers
-  }
-
-  return Math.max(0, FREE_TIER_LIMIT - usage.dailyMessages);
+  // Message limits removed for personal use
+  return Infinity;
 }
 
 /**
  * Get message limit for current tier
+ * @deprecated Message limits removed - always returns Infinity
  */
 export function getMessageLimit(): number {
-  const usage = getUsageData();
-  
-  if (usage.subscriptionTier === 'plus') return 100; // Plus tier: 100/day
-  if (usage.subscriptionTier === 'premium') return 500; // Premium tier: 500/day
-  
-  return FREE_TIER_LIMIT; // Free tier: 10/day
+  // Message limits removed for personal use
+  return Infinity;
 }
 
 /**

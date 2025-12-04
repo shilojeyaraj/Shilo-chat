@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar, ChevronDown, CheckSquare, Square, ArrowDown, AlertTriangle, BookOpen } from 'lucide-react';
 import MessageContent from './MessageContent';
 import toast from 'react-hot-toast';
@@ -20,10 +20,7 @@ import { normalizeForClipboard, normalizeOnPaste } from '@/lib/utils/text-normal
 import { compressImages, estimateImageTokens } from '@/lib/utils/image-compression';
 import { db, Conversation } from '@/lib/db';
 import { 
-  canSendMessage, 
-  incrementMessageCount, 
-  getRemainingMessages,
-  getMessageLimit,
+  incrementMessageCount,
   getUsageData 
 } from '@/lib/utils/usage-tracker';
 
@@ -124,8 +121,7 @@ export default function ChatInterface() {
   const [attachedFiles, setAttachedFiles] = useState<Array<{ file: File; preview?: string; type: string; name: string }>>([]);
   const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [selectedConversations, setSelectedConversations] = useState<Set<string>>(new Set());
-  const [remainingMessages, setRemainingMessages] = useState(0); // Initialize to 0 to avoid hydration mismatch
-  const [showLimitModal, setShowLimitModal] = useState(false);
+  // Message limits removed - these states are no longer needed
   const [deepWebSearch, setDeepWebSearch] = useState(false);
   // Initialize cost data to avoid hydration mismatch
   const [costData, setCostData] = useState<CostData>({ 
@@ -186,8 +182,8 @@ export default function ChatInterface() {
     }
   }, [input]);
 
-  // Check if user is at bottom of messages
-  const checkIfAtBottom = () => {
+  // Throttled scroll handler for better performance
+  const checkIfAtBottom = useCallback(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
     
@@ -195,19 +191,42 @@ export default function ChatInterface() {
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
     setIsAtBottom(isNearBottom);
     setShowScrollButton(!isNearBottom && container.scrollHeight > container.clientHeight);
-  };
+  }, []);
 
-  const scrollToBottom = (smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
-  };
+  // Throttle scroll events for better performance (~60fps)
+  const throttledCheckIfAtBottom = useMemo(() => {
+    let timeoutId: NodeJS.Timeout | null = null;
+    return () => {
+      if (timeoutId) return;
+      timeoutId = setTimeout(() => {
+        checkIfAtBottom();
+        timeoutId = null;
+      }, 16); // ~60fps
+    };
+  }, [checkIfAtBottom]);
 
-  // Only auto-scroll if user is at bottom
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (smooth && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    }
+  }, []);
+
+  // Only auto-scroll if user is at bottom - use requestAnimationFrame for smoother scrolling
   useEffect(() => {
     if (isAtBottom && messages.length > 0) {
-      // Small delay to ensure DOM is updated
-      setTimeout(() => scrollToBottom(true), 100);
+      // Use requestAnimationFrame for smoother scrolling
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToBottom(true);
+        });
+      });
     }
-  }, [messages, isAtBottom]);
+  }, [messages, isAtBottom, scrollToBottom]);
 
   // Load budget from localStorage
   useEffect(() => {
@@ -217,7 +236,7 @@ export default function ChatInterface() {
         try {
           setMonthlyBudget(parseFloat(stored));
         } catch (error) {
-          console.error('Failed to parse budget:', error);
+          // Failed to parse budget - using defaults
         }
       }
     }
@@ -276,7 +295,7 @@ export default function ChatInterface() {
           setModelOptions(filtered);
         }
       } catch (error) {
-        console.error('Failed to load available providers:', error);
+        // Failed to load available providers - using defaults
         // Keep default options if API fails
       }
     };
@@ -297,11 +316,7 @@ export default function ChatInterface() {
         }
         if (savedDeepWebSearch !== null) setDeepWebSearch(savedDeepWebSearch === 'true');
         
-        // Check initial message limit
-        setRemainingMessages(getRemainingMessages());
-        if (!canSendMessage()) {
-          setShowLimitModal(true);
-        }
+        // Message limits removed - always allow
       }
   }, []);
 
@@ -311,7 +326,7 @@ export default function ChatInterface() {
       const convs = await getAllConversations();
       setConversations(convs);
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      // Failed to load conversations
     }
   };
 
@@ -344,7 +359,7 @@ export default function ChatInterface() {
       setCurrentConversationId(conversationId);
       toast.success('Conversation loaded');
     } catch (error) {
-      console.error('Failed to load conversation:', error);
+      // Failed to load conversation
       toast.error('Failed to load conversation');
     }
   };
@@ -393,7 +408,7 @@ export default function ChatInterface() {
       await loadConversations();
       toast.success(`${count} conversation${count > 1 ? 's' : ''} deleted`);
     } catch (error) {
-      console.error('Failed to delete conversations:', error);
+      // Failed to delete conversations
       toast.error('Failed to delete some conversations');
     }
   };
@@ -457,7 +472,7 @@ export default function ChatInterface() {
       setEditingTitleId(null);
       toast.success('Title updated');
     } catch (error) {
-      console.error('Failed to update title:', error);
+        // Failed to update title
       toast.error('Failed to update title');
     }
   };
@@ -627,12 +642,7 @@ export default function ChatInterface() {
   const handleSend = async () => {
     if ((!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || isLoading) return;
 
-    // Check message limit
-    if (!canSendMessage()) {
-      setShowLimitModal(true);
-      toast.error(`Daily message limit reached! Upgrade to continue chatting.`);
-      return;
-    }
+    // Message limits removed - always allow
 
     // Create conversation if needed
     let convId = currentConversationId;
@@ -659,14 +669,8 @@ export default function ChatInterface() {
     // Save user message
     await saveMessage(convId, userMessage);
     
-    // Increment message count and update remaining
-    const updatedUsage = incrementMessageCount();
-    setRemainingMessages(getRemainingMessages());
-    
-    // Check if this was the last message
-    if (!canSendMessage()) {
-      setShowLimitModal(true);
-    }
+    // Increment message count (for tracking purposes)
+    incrementMessageCount();
     
     // Update title if this is the first message
     if (isNewConversation && input.trim()) {
@@ -700,10 +704,10 @@ export default function ChatInterface() {
           const compressedTokens = compressedImages.reduce((sum, img) => sum + estimateImageTokens(img), 0);
           const reduction = ((originalTokens - compressedTokens) / originalTokens * 100).toFixed(1);
           
-          console.log(`Image compression: ${originalTokens.toLocaleString()} → ${compressedTokens.toLocaleString()} tokens (${reduction}% reduction)`);
+          // Image compression completed
           toast.success(`Images compressed: ${reduction}% token reduction`, { id: 'compressing', duration: 2000 });
         } catch (error) {
-          console.error('Image compression error:', error);
+          // Image compression error - using original
           toast.error('Failed to compress images, using originals', { id: 'compressing' });
           // Continue with original images if compression fails
         }
@@ -906,7 +910,7 @@ export default function ChatInterface() {
                   };
                 }
               } catch (e) {
-                console.warn('Failed to parse SSE data:', e, data);
+                // Failed to parse SSE data - skipping chunk
               }
             }
           }
@@ -967,17 +971,17 @@ export default function ChatInterface() {
                 await addMemory(memory, convId || 'unknown');
               }
             } catch (err) {
-              console.error('Failed to add memory:', err);
+              // Failed to add memory - continuing
               // Continue with other memories
             }
           }
         } catch (error) {
-          console.error('Memory extraction error:', error);
+          // Memory extraction error - continuing
           // Continue - memory extraction is non-critical
         }
       }
     } catch (error: any) {
-      console.error('Chat error:', error);
+      // Chat error handled
       
       // Check if it's a Claude funding error
       if (error.isFundingError || error.message?.toLowerCase().includes('funding') || 
@@ -1024,7 +1028,8 @@ export default function ChatInterface() {
     switch (toolName) {
       case 'web_search':
         return <Search className="w-4 h-4" />;
-      case 'parse_pdf':
+      case 'parse_file':
+      case 'parse_pdf': // Legacy support
         return <FileText className="w-4 h-4" />;
       case 'analyze_csv':
         return <TrendingUp className="w-4 h-4" />;
@@ -1040,7 +1045,8 @@ export default function ChatInterface() {
   const getToolLabel = (toolName: string) => {
     const labels: Record<string, string> = {
       web_search: 'Searching web',
-      parse_pdf: 'Parsing PDF',
+      parse_file: 'Parsing file',
+      parse_pdf: 'Parsing file', // Legacy support
       analyze_csv: 'Analyzing CSV',
       code_interpreter: 'Running code',
       fetch_webpage: 'Fetching webpage',
@@ -1355,11 +1361,12 @@ export default function ChatInterface() {
                 setMode('coding');
                 localStorage.setItem('chatMode', 'coding');
               }}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-150 ${
                 mode === 'coding'
                   ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
+              style={{ willChange: 'background-color' }}
             >
               <Code className="w-4 h-4 inline mr-1.5" />
               Coding
@@ -1369,11 +1376,12 @@ export default function ChatInterface() {
                 setMode('study');
                 localStorage.setItem('chatMode', 'study');
               }}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-150 ${
                 mode === 'study'
                   ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
               }`}
+              style={{ willChange: 'background-color' }}
             >
               <BookOpen className="w-4 h-4 inline mr-1.5" />
               Study
@@ -1391,17 +1399,7 @@ export default function ChatInterface() {
               <span className="text-sm text-slate-400">
                 {getCurrentModelDisplay()} • ${costData.session.toFixed(2)}/1K tokens
               </span>
-              {remainingMessages !== Infinity && (
-                <span className={`text-xs px-3 py-1.5 rounded-full font-medium ${
-                  remainingMessages <= 5 
-                    ? 'bg-red-500/20 text-red-300 border border-red-500/30' 
-                    : remainingMessages <= 10
-                    ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'
-                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                }`}>
-                  {remainingMessages} messages left today
-                </span>
-              )}
+              {/* Message limits removed - badge disabled */}
             </div>
             {mode === 'coding' && (
               <span className="text-xs px-3 py-1.5 bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30 font-medium">
@@ -1440,8 +1438,14 @@ export default function ChatInterface() {
         {/* Messages */}
         <div 
           ref={messagesContainerRef}
-          onScroll={checkIfAtBottom}
-          className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-6 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 relative"
+          onScroll={throttledCheckIfAtBottom}
+          className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-6 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 relative smooth-scroll"
+          style={{
+            scrollBehavior: 'smooth',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
+            willChange: 'scroll-position',
+          }}
         >
           {/* Scroll to bottom button */}
           {showScrollButton && (
@@ -1556,11 +1560,12 @@ export default function ChatInterface() {
                   </div>
                 ) : (
                 <div
-                  className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-200 ${
+                  className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-200 break-words overflow-wrap-anywhere ${
                     message.role === 'user'
                       ? 'bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-600 text-white'
                       : 'bg-slate-800/80 backdrop-blur-sm text-slate-100 border border-slate-700/50'
                   }`}
+                  style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
                 >
                   {/* Display images */}
                   {message.images && message.images.length > 0 && (
@@ -1648,7 +1653,7 @@ export default function ChatInterface() {
                               personalInfoContext = await getPersonalInfoContext();
                             }
                           } catch (error) {
-                            console.error('Personal info retrieval error:', error);
+                            // Personal info retrieval error
                           }
 
                           // Fetch persistent memory
@@ -1660,7 +1665,7 @@ export default function ChatInterface() {
                               memoryContext = formatMemoriesForContext(relevantMemories);
                             }
                           } catch (error) {
-                            console.error('Memory retrieval error:', error);
+                            // Memory retrieval error
                           }
                           
                           const response = await fetch('/api/chat', {
@@ -1954,10 +1959,10 @@ export default function ChatInterface() {
               
               <button
                 onClick={handleSend}
-                disabled={isLoading || (!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || !canSendMessage() || editingMessageId !== null}
+                disabled={isLoading || (!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || editingMessageId !== null}
                 data-send-button
                 className="w-12 h-12 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:via-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 disabled:hover:scale-100"
-                title={!canSendMessage() ? 'Daily limit reached. Upgrade to continue.' : 'Send message'}
+                title="Send message"
               >
                 {isLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin text-white" />
@@ -2019,10 +2024,10 @@ export default function ChatInterface() {
         )}
 
         {/* Message Limit Modal */}
-        {showLimitModal && (() => {
+        {false && (() => { // Message limits removed - modal disabled
           const usage = getUsageData();
           const currentTier = usage.subscriptionTier;
-          const currentLimit = getMessageLimit();
+          const currentLimit = Infinity; // Limits removed
           
           // Determine upgrade suggestion based on current tier
           let upgradeTier: 'plus' | 'premium' | null = null;
@@ -2039,12 +2044,12 @@ export default function ChatInterface() {
           }
           
           return (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLimitModal(false)}>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => {}}>
               <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold text-white">Daily Limit Reached</h2>
                   <button
-                    onClick={() => setShowLimitModal(false)}
+                    onClick={() => {}}
                     className="text-gray-400 hover:text-white transition-colors"
                   >
                     <X className="w-5 h-5" />
@@ -2083,7 +2088,6 @@ export default function ChatInterface() {
                       <>
                         <button
                           onClick={() => {
-                            setShowLimitModal(false);
                             window.location.href = `/pricing?highlight=${upgradeTier}`;
                           }}
                           className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
@@ -2092,7 +2096,6 @@ export default function ChatInterface() {
                         </button>
                         <button
                           onClick={() => {
-                            setShowLimitModal(false);
                             window.location.href = '/pricing';
                           }}
                           className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"
@@ -2102,7 +2105,7 @@ export default function ChatInterface() {
                       </>
                     ) : (
                       <button
-                        onClick={() => setShowLimitModal(false)}
+                        onClick={() => {}}
                         className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
                       >
                         Close

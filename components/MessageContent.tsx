@@ -34,7 +34,7 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
         });
       }, 2000);
     } catch (err) {
-      console.error('Failed to copy code:', err);
+      // Failed to copy code - silently fail
     }
   };
 
@@ -56,7 +56,7 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
   }, [content]);
 
   return (
-    <div className="message-content prose prose-invert max-w-none">
+    <div className="message-content prose prose-invert max-w-none break-words overflow-wrap-anywhere" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}

@@ -76,15 +76,6 @@ async function generateOpenAIEmbeddings(texts: string[]): Promise<number[][]> {
   }
 }
 
-/**
- * Client-side embeddings removed - use OpenAI API instead
- * This function is kept for API compatibility but always throws
- */
-async function generateClientEmbeddings(texts: string[]): Promise<number[][]> {
-  throw new Error(
-    'Client-side embeddings are not available. Please configure OPENAI_API_KEY in .env.local for embeddings.'
-  );
-}
 
 /**
  * Generate embeddings for texts using OpenAI API

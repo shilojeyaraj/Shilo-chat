@@ -8,8 +8,7 @@ import { searchRelevantChunks } from '@/lib/utils/search';
 import { getCodingPrompt } from '@/lib/prompts/coding-mode';
 import { buildOptimizedContext, ConversationMessage } from '@/lib/utils/conversation-manager';
 import { assessResponseQuality } from '@/lib/utils/quality-assessor';
-// Personal info is now fetched on client side and passed in the request body
-// Removed import since we no longer access IndexedDB from server
+import type { ChatRequestBody, RAGChunk, FileData, ToolResult } from '@/lib/types/api';
 
 /**
  * Enhanced system prompt based on task type and mode
@@ -123,14 +122,16 @@ function detectStudyTechnique(taskType: string): string | undefined {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body: ChatRequestBody = await req.json();
     const {
       messages,
       files = [],
       userOverride,
       useRAG = false,
-      mode = 'primary', // 'primary' | 'coding' | 'study'
-      deepWebSearch = false, // Force Perplexity for web search/research
+      mode = 'primary',
+      deepWebSearch = false,
+      personalInfoContext,
+      memoryContext,
     } = body;
 
     // Extract text content from last message (handle multimodal)
@@ -150,10 +151,10 @@ export async function POST(req: NextRequest) {
     const requiredTools = await detectRequiredTools(lastMessage, files);
 
     // Step 2: Execute tools if needed
-    let toolResults: Record<string, any> = {};
+    let toolResults: ToolResult = {};
     if (requiredTools.length > 0) {
       // Prepare file data for tools
-      const fileData = files.map((f: any) => ({
+      const fileData: FileData[] = files.map((f) => ({
         ...f,
         data: f.data || f.content, // Support both formats
       }));
@@ -165,7 +166,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 3: Get RAG context if enabled
-    let ragContext: any[] = [];
+    let ragContext: RAGChunk[] = [];
     if (useRAG) {
       try {
         const relevantChunks = await searchRelevantChunks(lastMessage, 5, 0.5);
@@ -174,18 +175,12 @@ export async function POST(req: NextRequest) {
           text: chunk.text,
         }));
       } catch (error) {
-        console.error('RAG search error:', error);
         // Continue without RAG if it fails
+        // Error logged silently to avoid cluttering logs
       }
     }
 
-    // Step 3.5: Get personal information from request (client-side provides it from IndexedDB)
-    // IndexedDB is only available in the browser, so the client fetches it and sends it here
-    const personalInfoContext = body.personalInfoContext || '';
-
-    // Step 3.6: Get persistent memory context (server-side can access IndexedDB via client)
-    // For now, we'll get it from the request body (client fetches and sends)
-    const memoryContext = body.memoryContext || '';
+    // personalInfoContext and memoryContext are already extracted from body above
 
     // Early check: If images/files are present, verify Claude (preferred) or OpenAI is available
     // Check both files array and message content for images
@@ -253,9 +248,9 @@ export async function POST(req: NextRequest) {
 
     // Step 6: Build enhanced messages with system prompt and handle images
     // Limit system prompt size when images are present (images take most of the token budget)
-    // For study mode, we'll fetch study progress and error log (future implementation)
-    const studyProgress = mode === 'study' ? undefined : undefined; // TODO: Fetch from database
-    const errorLog = mode === 'study' ? undefined : undefined; // TODO: Fetch from database
+    // Study mode database integration - to be implemented when study features are fully developed
+    const studyProgress = mode === 'study' ? undefined : undefined;
+    const errorLog = mode === 'study' ? undefined : undefined;
     let systemPrompt = getSystemPrompt(taskType, mode, ragContext, toolResults, personalInfoContext, memoryContext, studyProgress, errorLog);
     
     // Truncate system prompt if it's too large (especially with images)
@@ -265,13 +260,13 @@ export async function POST(req: NextRequest) {
         // Claude - can handle larger system prompts
         if (systemPrompt.length > 3000) {
           systemPrompt = systemPrompt.substring(0, 3000) + '... [truncated for image processing]';
-          console.warn('System prompt truncated for Claude image processing');
+          // System prompt truncated for Claude image processing
         }
       } else {
         // OpenAI - be more conservative
         if (systemPrompt.length > 2000) {
           systemPrompt = systemPrompt.substring(0, 2000) + '... [truncated for image processing]';
-          console.warn('System prompt truncated for OpenAI image processing');
+          // System prompt truncated for OpenAI image processing
         }
       }
     }
@@ -287,11 +282,11 @@ export async function POST(req: NextRequest) {
       if (config.provider === 'openai') {
         // OpenAI - be very conservative (images are huge in base64)
         finalMessages = userMessages.slice(-5);
-        console.log(`Limiting to last ${finalMessages.length} messages for OpenAI image processing`);
+        // Limiting to last N messages for OpenAI image processing
       } else if (config.provider === 'anthropic') {
         // Claude - can handle more context with images
         finalMessages = userMessages.slice(-8);
-        console.log(`Limiting to last ${finalMessages.length} messages for Claude image processing`);
+        // Limiting to last N messages for Claude image processing
       }
     }
     
@@ -338,7 +333,7 @@ export async function POST(req: NextRequest) {
                     },
                   });
                 } else {
-                  console.warn('Invalid image format, skipping:', imageUrl.substring(0, 50));
+                  // Invalid image format, skipping
                 }
               }
             });
@@ -407,7 +402,7 @@ export async function POST(req: NextRequest) {
             taskType
           );
 
-          console.log(`Groq quality assessment: ${qualityAssessment.quality}/10, fallback: ${qualityAssessment.shouldFallback}, reasons: ${qualityAssessment.reasons.join(', ')}`);
+          // Quality assessment completed
 
           // If quality is sufficient, use Groq response
           if (!qualityAssessment.shouldFallback) {
@@ -416,7 +411,7 @@ export async function POST(req: NextRequest) {
             finalProvider = groqProvider;
           } else {
             // Quality is insufficient, fallback to Kimi
-            console.log(`Groq response quality insufficient (${qualityAssessment.quality}/10), falling back to Kimi K2`);
+            // Groq response quality insufficient, falling back to Kimi K2
             usedFallback = true;
             finalConfig = {
               provider: 'kimi',
@@ -429,7 +424,7 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (error) {
-        console.error('Groq quality check failed, using fallback:', error);
+        // Groq quality check failed, using fallback
         // If Groq fails, fallback to Kimi
         usedFallback = true;
         finalConfig = {
@@ -563,7 +558,7 @@ export async function POST(req: NextRequest) {
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
           controller.close();
         } catch (error: any) {
-          console.error('Streaming error:', error);
+          // Streaming error handled
           // Send error to client before closing
           const errorMessage = error?.message || String(error);
           controller.enqueue(
@@ -585,7 +580,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Chat API error:', error);
+    // Chat API error handled
     return NextResponse.json(
       { error: 'Internal server error', details: String(error) },
       { status: 500 }

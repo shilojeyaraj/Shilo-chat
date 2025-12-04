@@ -40,6 +40,23 @@ body {
   }
 }
 
+/* Smooth scrolling for all elements */
+* {
+  scroll-behavior: smooth;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Performance optimizations */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Custom scrollbar - smooth and modern */
 ::-webkit-scrollbar {
   width: 10px;
@@ -56,11 +73,28 @@ body {
   border-radius: 10px;
   border: 2px solid transparent;
   background-clip: padding-box;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease;
+  will-change: background;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, rgba(99, 102, 241, 0.8) 0%, rgba(139, 92, 246, 0.8) 100%);
   background-clip: padding-box;
+}
+
+/* Smooth scrolling containers */
+.smooth-scroll {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  will-change: scroll-position;
+}
+
+/* Hardware acceleration for animations */
+.gpu-accelerated {
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
+  perspective: 1000px;
 }
 

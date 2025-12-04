@@ -276,7 +276,7 @@ export async function routeRequest(
     hasCode?: boolean;
     fileCount?: number;
     userOverride?: string; // Manual model selection
-    mode?: 'primary' | 'coding'; // Chat mode
+    mode?: 'primary' | 'coding' | 'study'; // Chat mode
     deepWebSearch?: boolean; // Force Perplexity for web search/research
   } = {}
 ): Promise<{ config: ModelConfig; taskType: TaskType }> {
