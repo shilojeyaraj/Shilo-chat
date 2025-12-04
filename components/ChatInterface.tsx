@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar, ChevronDown, CheckSquare, Square, ArrowDown, AlertTriangle } from 'lucide-react';
+import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar, ChevronDown, CheckSquare, Square, ArrowDown, AlertTriangle, BookOpen } from 'lucide-react';
 import MessageContent from './MessageContent';
 import toast from 'react-hot-toast';
 import PdfUpload from './PdfUpload';
@@ -119,7 +119,7 @@ export default function ChatInterface() {
   const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [mode, setMode] = useState<'primary' | 'coding'>('primary');
+  const [mode, setMode] = useState<'primary' | 'coding' | 'study'>('primary');
   const [showFundingError, setShowFundingError] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<Array<{ file: File; preview?: string; type: string; name: string }>>([]);
   const [multiSelectMode, setMultiSelectMode] = useState(false);
@@ -288,11 +288,13 @@ export default function ChatInterface() {
       if (typeof window !== 'undefined') {
         const savedModel = localStorage.getItem('defaultModel');
         const savedRAG = localStorage.getItem('useRAG');
-        const savedMode = localStorage.getItem('chatMode') as 'primary' | 'coding' | null;
+        const savedMode = localStorage.getItem('chatMode') as 'primary' | 'coding' | 'study' | null;
         const savedDeepWebSearch = localStorage.getItem('deepWebSearch');
         if (savedModel) setUserOverride(savedModel);
         if (savedRAG !== null) setUseRAG(savedRAG === 'true');
-        if (savedMode) setMode(savedMode);
+        if (savedMode && (savedMode === 'primary' || savedMode === 'coding' || savedMode === 'study')) {
+          setMode(savedMode);
+        }
         if (savedDeepWebSearch !== null) setDeepWebSearch(savedDeepWebSearch === 'true');
         
         // Check initial message limit
@@ -1361,6 +1363,20 @@ export default function ChatInterface() {
             >
               <Code className="w-4 h-4 inline mr-1.5" />
               Coding
+            </button>
+            <button
+              onClick={() => {
+                setMode('study');
+                localStorage.setItem('chatMode', 'study');
+              }}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                mode === 'study'
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/20'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <BookOpen className="w-4 h-4 inline mr-1.5" />
+              Study
             </button>
           </div>
         </div>

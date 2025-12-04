@@ -12,6 +12,7 @@ export type TaskType =
   | 'data_analysis'
   | 'long_context'
   | 'vision'
+  | 'study'
   | 'general';
 
 export interface ModelConfig {
@@ -93,6 +94,13 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
     temperature: 0.7,
     costPer1M: 0.8, // Haiku: $0.80/1M input, $4/1M output (vs Sonnet $3/$15)
   },
+  study: {
+    provider: 'kimi', // Kimi K2 for better reasoning in study mode
+    model: 'moonshot-v1-128k', // Kimi K2 - excellent for educational content
+    maxTokens: 8192, // Longer context for study materials
+    temperature: 0.7,
+    costPer1M: 1.2,
+  },
   general: {
     provider: 'groq', // Try Groq first, fallback to Kimi if quality is low
     model: 'llama-3.1-8b-instant', // Fast and cheap for initial attempt
@@ -152,6 +160,17 @@ export async function classifyTask(
   // Check for data analysis
   if (/analyze|data|csv|chart|graph|statistics|calculate|dataset/i.test(userMessage)) {
     return 'data_analysis';
+  }
+
+  // Check for study-related queries
+  const studyKeywords = [
+    'study', 'learn', 'practice', 'review', 'exam', 'quiz', 'homework', 'assignment',
+    'problem set', 'practice problems', 'study session', 'help me study', 'teach me',
+    'explain concept', 'work through', 'solve problems', 'study guide', 'exam prep'
+  ];
+  if (studyKeywords.some(kw => userMessage.toLowerCase().includes(kw)) ||
+      (/study|learn|practice|review/i.test(userMessage) && userMessage.length > 20)) {
+    return 'study';
   }
 
   // Simple questions

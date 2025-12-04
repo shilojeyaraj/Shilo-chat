@@ -16,12 +16,22 @@ import { assessResponseQuality } from '@/lib/utils/quality-assessor';
  */
 function getSystemPrompt(
   taskType: string,
-  mode: 'primary' | 'coding' = 'primary',
+  mode: 'primary' | 'coding' | 'study' = 'primary',
   ragContext?: any[],
   toolResults?: Record<string, any>,
   personalInfoContext?: string,
-  memoryContext?: string
+  memoryContext?: string,
+  studyProgress?: any,
+  errorLog?: any[]
 ): string {
+  // Study mode uses EELC prompts
+  if (mode === 'study') {
+    const { getStudyPrompt } = require('@/lib/prompts/study-mode');
+    // Detect technique from user message or use default
+    const technique = detectStudyTechnique(taskType);
+    return getStudyPrompt(taskType, technique, ragContext, studyProgress, errorLog);
+  }
+  
   // Coding mode uses advanced prompts
   if (mode === 'coding') {
     return getCodingPrompt(taskType, ragContext, toolResults);
@@ -99,6 +109,18 @@ Be conversational, helpful, and concise. Match ChatGPT's tone and quality.`;
   return basePrompt;
 }
 
+/**
+ * Detect study technique from task type or message content
+ */
+function detectStudyTechnique(taskType: string): string | undefined {
+  // Map task types to study techniques
+  if (taskType === 'study') {
+    // Default technique - can be refined based on message content
+    return undefined; // Will use default from main prompt
+  }
+  return undefined;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -107,7 +129,7 @@ export async function POST(req: NextRequest) {
       files = [],
       userOverride,
       useRAG = false,
-      mode = 'primary', // 'primary' or 'coding'
+      mode = 'primary', // 'primary' | 'coding' | 'study'
       deepWebSearch = false, // Force Perplexity for web search/research
     } = body;
 
@@ -231,7 +253,10 @@ export async function POST(req: NextRequest) {
 
     // Step 6: Build enhanced messages with system prompt and handle images
     // Limit system prompt size when images are present (images take most of the token budget)
-    let systemPrompt = getSystemPrompt(taskType, mode, ragContext, toolResults, personalInfoContext, memoryContext);
+    // For study mode, we'll fetch study progress and error log (future implementation)
+    const studyProgress = mode === 'study' ? undefined : undefined; // TODO: Fetch from database
+    const errorLog = mode === 'study' ? undefined : undefined; // TODO: Fetch from database
+    let systemPrompt = getSystemPrompt(taskType, mode, ragContext, toolResults, personalInfoContext, memoryContext, studyProgress, errorLog);
     
     // Truncate system prompt if it's too large (especially with images)
     // Claude handles large images well, so we can keep more context
@@ -345,7 +370,7 @@ export async function POST(req: NextRequest) {
 
     // Step 7: Quality-based fallback logic for Groq responses
     // For general/quick_qa tasks using Groq, try Groq first, then fallback to Kimi if quality is low
-    const available = getAvailableProviders();
+    // Note: 'available' is already defined above, reuse it
     const shouldTryFallback = 
       (taskType === 'general' || taskType === 'quick_qa' || taskType === 'reasoning') &&
       config.provider === 'groq' &&
