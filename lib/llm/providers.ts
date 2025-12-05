@@ -1558,6 +1558,203 @@ const geminiProvider: LLMProvider = {
   },
 };
 
+/**
+ * OpenRouter Provider - Unified access to 400+ models via single API
+ */
+const openRouterProvider: LLMProvider = {
+  name: 'OpenRouter',
+  isAvailable: () => !!process.env.OPEN_ROUTER_KEY,
+  call: async (messages, config) => {
+    const apiKey = process.env.OPEN_ROUTER_KEY;
+    if (!apiKey) {
+      throw new Error('OPEN_ROUTER_KEY is not set in environment variables');
+    }
+
+    // Format messages for OpenAI-compatible API (OpenRouter uses OpenAI format)
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : undefined;
+
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system') // System messages handled separately
+      .map((m: any) => {
+        // If content is an array (has images), use it directly (OpenAI format)
+        if (Array.isArray(m.content)) {
+          return {
+            role: m.role,
+            content: m.content, // Already in OpenAI format
+          };
+        }
+        // Regular text message
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ', // Ensure non-empty
+        };
+      })
+      .filter((m: any) => {
+        // Filter out empty messages
+        if (m.role === 'user' && typeof m.content === 'string' && !m.content.trim()) {
+          return false;
+        }
+        return true;
+      });
+
+    const requestBody: any = {
+      model: config.model, // OpenRouter model ID (e.g., "anthropic/claude-3.5-sonnet")
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+    };
+
+    // Add system message if present
+    if (systemContent) {
+      requestBody.messages.unshift({
+        role: 'system',
+        content: systemContent,
+      });
+    }
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        'X-Title': 'Shilo Chat',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `OpenRouter API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('OpenRouter API Error Details:', errorJson);
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('OpenRouter API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return {
+      content: data.choices[0]?.message?.content || '',
+      usage: data.usage,
+    };
+  },
+  streamCall: async function* (messages, config) {
+    const apiKey = process.env.OPEN_ROUTER_KEY;
+    if (!apiKey) {
+      throw new Error('OPEN_ROUTER_KEY is not set in environment variables');
+    }
+
+    // Format messages for OpenAI-compatible API
+    const systemMessage = messages.find(m => m.role === 'system');
+    const systemContent = systemMessage 
+      ? (typeof systemMessage.content === 'string' ? systemMessage.content : '')
+      : undefined;
+
+    const formattedMessages = messages
+      .filter(m => m.role !== 'system')
+      .map((m: any) => {
+        if (Array.isArray(m.content)) {
+          return {
+            role: m.role,
+            content: m.content,
+          };
+        }
+        const textContent = typeof m.content === 'string' ? m.content.trim() : '';
+        return {
+          role: m.role,
+          content: textContent || ' ',
+        };
+      })
+      .filter((m: any) => {
+        if (m.role === 'user' && typeof m.content === 'string' && !m.content.trim()) {
+          return false;
+        }
+        return true;
+      });
+
+    const requestBody: any = {
+      model: config.model,
+      messages: formattedMessages,
+      temperature: config.temperature,
+      max_tokens: config.maxTokens,
+      stream: true,
+    };
+
+    if (systemContent) {
+      requestBody.messages.unshift({
+        role: 'system',
+        content: systemContent,
+      });
+    }
+
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        'X-Title': 'Shilo Chat',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `OpenRouter API error (${response.status}): ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorText;
+        console.error('OpenRouter API Error Details:', errorJson);
+      } catch {
+        errorMessage = errorText || response.statusText;
+        console.error('OpenRouter API Error (raw):', errorText);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6).trim();
+          if (data === '[DONE]' || !data) continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  },
+};
+
 export const providers: Record<string, LLMProvider> = {
   groq: groqProvider,
   perplexity: perplexityProvider,
@@ -1565,5 +1762,6 @@ export const providers: Record<string, LLMProvider> = {
   anthropic: anthropicProvider,
   openai: openaiProvider,
   gemini: geminiProvider,
+  openrouter: openRouterProvider,
 };
 

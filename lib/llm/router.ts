@@ -1,5 +1,6 @@
 import { Message } from './types';
 import { getAvailableProviders, getBestAvailableProvider } from './key-checker';
+import { getOpenRouterModelId } from './openrouter-models';
 
 export type TaskType =
   | 'web_search'
@@ -16,7 +17,7 @@ export type TaskType =
   | 'general';
 
 export interface ModelConfig {
-  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini';
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini' | 'openrouter';
   model: string;
   maxTokens: number;
   temperature: number;
@@ -191,9 +192,16 @@ export async function classifyTask(
  * Get fallback model config for a provider
  */
 function getFallbackConfig(
-  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini'
+  provider: 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini' | 'openrouter'
 ): ModelConfig {
   const fallbacks: Record<string, ModelConfig> = {
+    openrouter: {
+      provider: 'openrouter',
+      model: 'groq/llama-3.1-8b-instant', // Fast and cheap default
+      maxTokens: 4096,
+      temperature: 0.7,
+      costPer1M: 0.05,
+    },
     groq: {
       provider: 'groq',
       model: 'llama-3.3-70b-versatile',
@@ -294,10 +302,21 @@ export async function routeRequest(
   }
   const available = getAvailableProviders();
 
+  // If OpenRouter is available, prefer it for unified access
+  const useOpenRouter = available.openrouter;
+
+  let taskType = await classifyTask(
+    lastMessage,
+    context.hasImages,
+    context.hasCode,
+    context.fileCount || 0,
+    messages.length
+  );
+
   // User can manually override
   if (context.userOverride) {
     const [provider, model] = context.userOverride.split('/');
-    const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini';
+    const overrideProvider = provider as 'groq' | 'kimi' | 'anthropic' | 'perplexity' | 'openai' | 'gemini' | 'openrouter';
     
     // CRITICAL: Prevent using non-vision models with images or files
     // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
@@ -306,6 +325,21 @@ export async function routeRequest(
         (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi' || overrideProvider === 'gemini')) {
       // Auto-switch to Claude Haiku (cheapest) or OpenAI for vision
       console.log(`Auto-switching from ${overrideProvider} to Claude Haiku for image/file processing (cost-optimized)`);
+      
+      // If OpenRouter is available, use it
+      if (useOpenRouter && available.openrouter) {
+        return {
+          config: {
+            provider: 'openrouter',
+            model: 'anthropic/claude-3.5-haiku', // OpenRouter model ID
+            maxTokens: 4096,
+            temperature: 0.7,
+            costPer1M: 0.8,
+          },
+          taskType: context.hasImages ? 'vision' : 'long_context',
+        };
+      }
+      
       if (available.anthropic) {
         return {
           config: {
@@ -339,10 +373,22 @@ export async function routeRequest(
     
     // Check if override provider is available
     if (available[overrideProvider]) {
+      let finalModel = model || getFallbackConfig(overrideProvider).model;
+      
+      // If using OpenRouter, convert model ID
+      if (overrideProvider === 'openrouter' && model) {
+        finalModel = getOpenRouterModelId(model);
+      } else if (overrideProvider === 'openrouter' && !model) {
+        // Get preferred config for task type
+        const preferredConfig = ROUTING_TABLE[taskType];
+        // Use default model for task type via OpenRouter
+        finalModel = getOpenRouterModelId(preferredConfig.model);
+      }
+      
       return {
         config: {
           provider: overrideProvider,
-          model: model || getFallbackConfig(overrideProvider).model,
+          model: finalModel,
           maxTokens: 4096,
           temperature: 0.7,
           costPer1M: getFallbackConfig(overrideProvider).costPer1M,
@@ -360,14 +406,6 @@ export async function routeRequest(
       }
     }
   }
-
-  let taskType = await classifyTask(
-    lastMessage,
-    context.hasImages,
-    context.hasCode,
-    context.fileCount || 0,
-    messages.length
-  );
 
   // If deep web search is enabled, force web_search or deep_research to use Perplexity
   if (context.deepWebSearch) {
@@ -404,6 +442,24 @@ export async function routeRequest(
   // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
   // Claude 3.5 Sonnet is the preferred choice for vision tasks
   if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
+    // If OpenRouter is available, use it with Claude model
+    if (useOpenRouter && available.openrouter) {
+      const visionConfig: ModelConfig = {
+        provider: 'openrouter',
+        model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
+        maxTokens: 8192,
+        temperature: 0.7,
+        costPer1M: 3,
+      };
+      
+      console.log(`Using OpenRouter (anthropic/claude-3.5-sonnet) for image/file processing`);
+      
+      return {
+        config: visionConfig,
+        taskType: context.hasImages ? 'vision' : 'long_context',
+      };
+    }
+    
     // Force Claude (preferred) or OpenAI for vision and file processing
     if (available.anthropic) {
       const visionConfig: ModelConfig = {
@@ -439,7 +495,7 @@ export async function routeRequest(
       // No vision-capable provider available
       throw new Error(
         'Images or files detected but no vision-capable model is available. ' +
-        'Please add ANTHROPIC_API_KEY (preferred) or OPENAI_API_KEY to use image/file analysis. ' +
+        'Please add OPEN_ROUTER_KEY (preferred), ANTHROPIC_API_KEY, or OPENAI_API_KEY to use image/file analysis. ' +
         'Kimi K2, Groq, and Perplexity do not support image extraction.'
       );
     }
@@ -449,6 +505,22 @@ export async function routeRequest(
   if (context.mode === 'coding') {
     // Override routing for coding mode - prefer Claude for code tasks
     if (taskType === 'code_generation' || taskType === 'code_editing') {
+      // If OpenRouter is available, use it with Claude model
+      if (useOpenRouter && available.openrouter) {
+        const codingConfig = {
+          provider: 'openrouter' as const,
+          model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
+          maxTokens: 8192,
+          temperature: 0.3,
+          costPer1M: 3,
+        };
+        
+        return {
+          config: codingConfig,
+          taskType,
+        };
+      }
+      
       const codingConfig = {
         provider: 'anthropic' as const,
         model: 'claude-3-5-sonnet-20240620',
@@ -478,11 +550,23 @@ export async function routeRequest(
 
   const preferredConfig = ROUTING_TABLE[taskType];
   
-  // For general tasks, prefer Kimi K2 as default, but fallback gracefully
+  // If OpenRouter is available, convert to OpenRouter model IDs
   let config = getConfigWithFallback(preferredConfig, available);
   
+  if (useOpenRouter && available.openrouter) {
+    // Convert to OpenRouter provider and model ID
+    const openRouterModelId = getOpenRouterModelId(config.model);
+    config = {
+      ...config,
+      provider: 'openrouter',
+      model: openRouterModelId,
+      // Keep same cost estimate (OpenRouter pricing is similar)
+      costPer1M: config.costPer1M,
+    };
+  }
+  
   // If Kimi is not available for general tasks, try other providers
-  if (taskType === 'general' && !available.kimi) {
+  if (taskType === 'general' && !available.kimi && !useOpenRouter) {
     // Fallback order: Groq > Anthropic > Perplexity
     if (available.groq) {
       config = getFallbackConfig('groq');

@@ -10,6 +10,7 @@ export interface AvailableProviders {
   anthropic: boolean;
   openai: boolean;
   gemini: boolean;
+  openrouter: boolean;
 }
 
 /**
@@ -23,6 +24,7 @@ export function getAvailableProviders(): AvailableProviders {
     anthropic: !!process.env.ANTHROPIC_API_KEY,
     openai: !!process.env.OPENAI_API_KEY,
     gemini: !!process.env.GEMINI_API_KEY,
+    openrouter: !!process.env.OPEN_ROUTER_KEY,
   };
 }
 
@@ -31,16 +33,17 @@ export function getAvailableProviders(): AvailableProviders {
  * Falls back to available providers if preferred one isn't available
  */
 export function getBestAvailableProvider(
-  preferred: 'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai' | 'gemini',
+  preferred: 'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai' | 'gemini' | 'openrouter',
   available: AvailableProviders
-): 'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai' | 'gemini' | null {
+): 'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai' | 'gemini' | 'openrouter' | null {
   // If preferred is available, use it
   if (available[preferred]) {
     return preferred;
   }
 
   // Fallback priority order
-  const fallbackOrder: Array<'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai' | 'gemini'> = [
+  const fallbackOrder: Array<'groq' | 'perplexity' | 'kimi' | 'anthropic' | 'openai' | 'gemini' | 'openrouter'> = [
+    'openrouter', // If OpenRouter is available, prefer it (unified access to all models)
     'groq',      // Cheapest, fastest
     'kimi',      // Great quality, good pricing (Kimi K2)
     'gemini',    // Best for vision, good quality, free tier

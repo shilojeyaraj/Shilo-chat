@@ -23,6 +23,7 @@ import {
   incrementMessageCount,
   getUsageData 
 } from '@/lib/utils/usage-tracker';
+// import { calculateOpenRouterCost } from '@/lib/llm/openrouter-models';
 
 interface Message {
   id: string;
@@ -179,6 +180,8 @@ export default function ChatInterface() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const shouldAutoScrollRef = useRef(false); // Track if we should auto-scroll for current streaming message
+  const lastMessageCountRef = useRef(0); // Track message count to detect new messages
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageContent, setEditingMessageContent] = useState('');
   const [monthlyBudget, setMonthlyBudget] = useState<number | null>(null);
@@ -213,6 +216,11 @@ export default function ChatInterface() {
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
     setIsAtBottom(isNearBottom);
     setShowScrollButton(!isNearBottom && container.scrollHeight > container.clientHeight);
+    
+    // If user scrolls up during streaming, disable auto-scroll
+    if (!isNearBottom && shouldAutoScrollRef.current) {
+      shouldAutoScrollRef.current = false;
+    }
   }, []);
 
   // Throttle scroll events for better performance (~60fps)
@@ -238,9 +246,28 @@ export default function ChatInterface() {
     }
   }, []);
 
-  // Only auto-scroll if user is at bottom - use requestAnimationFrame for smoother scrolling
+  // Smart auto-scroll: Only scroll if user was at bottom when message started
+  // This prevents forcing scroll to bottom when a new message begins (like Claude)
   useEffect(() => {
-    if (isAtBottom && messages.length > 0) {
+    const messageCount = messages.length;
+    const lastCount = lastMessageCountRef.current;
+    
+    // Detect if a new message was just added
+    if (messageCount > lastCount) {
+      // Check if user is at bottom when new message starts
+      const container = messagesContainerRef.current;
+      if (container) {
+        const threshold = 100;
+        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+        // Only enable auto-scroll if user was at bottom when message started
+        shouldAutoScrollRef.current = isNearBottom;
+      }
+      lastMessageCountRef.current = messageCount;
+    }
+    
+    // Only auto-scroll during streaming if we should (user was at bottom when message started)
+    // AND user is still at bottom (hasn't scrolled up)
+    if (shouldAutoScrollRef.current && isAtBottom && messages.length > 0) {
       // Use requestAnimationFrame for smoother scrolling
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -894,6 +921,7 @@ export default function ChatInterface() {
                     return updated;
                   });
                   setIsLoading(false);
+                  shouldAutoScrollRef.current = false;
                   break;
                 } else if (parsed.type === 'content') {
                   assistantMessage.content += parsed.content;
@@ -1026,6 +1054,7 @@ export default function ChatInterface() {
     } finally {
       setIsLoading(false);
       setActiveTools([]);
+      shouldAutoScrollRef.current = false;
     }
   };
 
@@ -1746,6 +1775,7 @@ export default function ChatInterface() {
                           toast.error('Failed to regenerate');
                         } finally {
                           setIsLoading(false);
+                          shouldAutoScrollRef.current = false;
                         }
                       }}
                       className="p-2 hover:bg-slate-800/50 rounded-xl text-slate-400 hover:text-indigo-400 transition-all duration-200 hover:scale-110"
