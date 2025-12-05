@@ -149,17 +149,17 @@ Return a JSON object with this structure:
 
 IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON object.`;
 
-    // Use Groq for extraction (simple and reliable)
-    const groqProvider = providers.groq;
+    // Use OpenRouter for extraction (unified access to all models)
+    const openRouterProvider = providers.openrouter;
     
-    console.log('[Personal Info Extract] Checking Groq provider availability...');
-    console.log('[Personal Info Extract] Groq provider exists:', !!groqProvider);
-    console.log('[Personal Info Extract] Groq isAvailable:', groqProvider?.isAvailable());
+    console.log('[Personal Info Extract] Checking OpenRouter provider availability...');
+    console.log('[Personal Info Extract] OpenRouter provider exists:', !!openRouterProvider);
+    console.log('[Personal Info Extract] OpenRouter isAvailable:', openRouterProvider?.isAvailable());
     
-    if (!groqProvider || !groqProvider.isAvailable()) {
-      console.error('[Personal Info Extract] Groq provider not available. GROQ_API_KEY is required.');
+    if (!openRouterProvider || !openRouterProvider.isAvailable()) {
+      console.error('[Personal Info Extract] OpenRouter provider not available. OPEN_ROUTER_KEY is required.');
       return NextResponse.json(
-        { error: 'GROQ_API_KEY is required for extraction. Please add it to Vercel environment variables.' },
+        { error: 'OPEN_ROUTER_KEY is required for extraction. Please add it to Vercel environment variables.' },
         { status: 500 }
       );
     }
@@ -175,10 +175,10 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
       },
     ];
 
-    // Use Groq's Llama 3.3 70B model
-    const model = 'llama-3.3-70b-versatile';
+    // Use Groq's Llama 3.3 70B model via OpenRouter
+    const model = 'groq/llama-3.3-70b-versatile';
 
-    console.log('[Personal Info Extract] Using Groq provider with model:', model);
+    console.log('[Personal Info Extract] Using OpenRouter provider with model:', model);
     console.log('[Personal Info Extract] Request config:', {
       model,
       temperature: 0.2,
@@ -187,21 +187,21 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
 
     let response;
     try {
-      response = await groqProvider.call(messages, {
+      response = await openRouterProvider.call(messages, {
         model,
         temperature: 0.2, // Lower temperature for more consistent, structured extraction
         maxTokens: 8192, // More tokens for comprehensive extraction
         stream: false,
       });
-      console.log('[Personal Info Extract] Groq extraction successful');
+      console.log('[Personal Info Extract] OpenRouter extraction successful');
     } catch (error: any) {
-      console.error('Groq extraction error:', error);
+      console.error('OpenRouter extraction error:', error);
       const errorMessage = error.message || String(error);
       
       // Provide more specific error messages
       if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Invalid') || errorMessage.includes('Authentication')) {
         throw new Error(
-          `Authentication failed. Please check that GROQ_API_KEY is set correctly in Vercel environment variables and you have redeployed.`
+          `Authentication failed. Please check that OPEN_ROUTER_KEY is set correctly in Vercel environment variables and you have redeployed.`
         );
       }
       
@@ -213,7 +213,7 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
       
       throw new Error(
         `Failed to extract information: ${errorMessage}. ` +
-        `Please ensure GROQ_API_KEY is configured correctly.`
+        `Please ensure OPEN_ROUTER_KEY is configured correctly.`
       );
     }
 
@@ -259,11 +259,11 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
       console.error('Extraction error:', error);
       
       // Check for authentication errors
-      if (error.message?.includes('Invalid Authentication') || error.message?.includes('401') || error.message?.includes('403') || error.message?.includes('Authentication Failed') || error.message?.includes('GROQ_API_KEY')) {
+      if (error.message?.includes('Invalid Authentication') || error.message?.includes('401') || error.message?.includes('403') || error.message?.includes('Authentication Failed') || error.message?.includes('OPEN_ROUTER_KEY')) {
         return NextResponse.json(
           { 
             error: 'API authentication failed',
-            details: error.message || 'Please check that GROQ_API_KEY is set correctly in Vercel environment variables and you have redeployed after adding it.'
+            details: error.message || 'Please check that OPEN_ROUTER_KEY is set correctly in Vercel environment variables and you have redeployed after adding it.'
           },
           { status: 401 }
         );

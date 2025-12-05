@@ -7,7 +7,7 @@ import { Message } from '@/lib/llm/types';
 import { searchRelevantChunks } from '@/lib/utils/search';
 import { getCodingPrompt } from '@/lib/prompts/coding-mode';
 import { buildOptimizedContext, ConversationMessage } from '@/lib/utils/conversation-manager';
-import { assessResponseQuality } from '@/lib/utils/quality-assessor';
+// Quality assessment removed - OpenRouter handles model selection
 import type { ChatRequestBody, RAGChunk, FileData, ToolResult } from '@/lib/types/api';
 
 /**
@@ -195,11 +195,12 @@ export async function POST(req: NextRequest) {
     const fileCount = files.length;
     const available = getAvailableProviders();
     
-    if ((hasImages || fileCount > 0) && !available.anthropic && !available.openai) {
+    // OpenRouter is required and handles all models including vision
+    if ((hasImages || fileCount > 0) && !available.openrouter) {
       return NextResponse.json(
         {
-          error: 'Claude or OpenAI API key required for image/file analysis',
-          details: 'Images or files were detected, but neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is configured in your Vercel environment variables. Please add your Claude API key (preferred) or OpenAI API key to enable image/file analysis features.',
+          error: 'OPEN_ROUTER_KEY required for image/file analysis',
+          details: 'Images or files were detected, but OPEN_ROUTER_KEY is not configured. OpenRouter provides access to Claude and OpenAI models for vision tasks. Please add OPEN_ROUTER_KEY to your Vercel environment variables.',
           requiresVision: true,
         },
         { status: 400 }
@@ -363,83 +364,11 @@ export async function POST(req: NextRequest) {
         .filter((m): m is Message => m !== null), // Remove null entries with type guard
     ];
 
-    // Step 7: Quality-based fallback logic for Groq responses
-    // For general/quick_qa tasks using Groq, try Groq first, then fallback to Kimi if quality is low
-    // Note: 'available' is already defined above, reuse it
-    const shouldTryFallback = 
-      (taskType === 'general' || taskType === 'quick_qa' || taskType === 'reasoning') &&
-      config.provider === 'groq' &&
-      available.groq &&
-      available.kimi &&
-      !userOverride; // Don't override if user manually selected a model
-
-    let finalConfig = config;
-    let finalProvider = providers[config.provider];
-    let groqResponse: string = '';
-    let groqUsage: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
-    let usedFallback = false;
-
-    // Try Groq first if fallback is enabled
-    if (shouldTryFallback) {
-      try {
-        const groqProvider = providers.groq;
-        if (groqProvider && groqProvider.isAvailable()) {
-          // Make a fast non-streaming call to Groq
-          const groqResult = await groqProvider.call(enhancedMessages, {
-            model: config.model,
-            temperature: config.temperature,
-            maxTokens: Math.min(config.maxTokens, 2048), // Limit tokens for fast assessment
-            stream: false,
-          });
-
-          groqResponse = groqResult.content || '';
-          groqUsage = groqResult.usage || null;
-
-          // Assess quality
-          const qualityAssessment = assessResponseQuality(
-            lastMessage,
-            groqResponse,
-            taskType
-          );
-
-          // Quality assessment completed
-
-          // If quality is sufficient, use Groq response
-          if (!qualityAssessment.shouldFallback) {
-            // Groq response is good, we'll stream it
-            finalConfig = config;
-            finalProvider = groqProvider;
-          } else {
-            // Quality is insufficient, fallback to Kimi
-            // Groq response quality insufficient, falling back to Kimi K2
-            usedFallback = true;
-            finalConfig = {
-              provider: 'kimi',
-              model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation
-              maxTokens: 4096,
-              temperature: 0.7,
-              costPer1M: 1.2,
-            };
-            finalProvider = providers.kimi;
-          }
-        }
-      } catch (error) {
-        // Groq quality check failed, using fallback
-        // If Groq fails, fallback to Kimi
-        usedFallback = true;
-        finalConfig = {
-          provider: 'kimi',
-          model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation
-          maxTokens: 4096,
-          temperature: 0.7,
-          costPer1M: 1.2,
-        };
-        finalProvider = providers.kimi;
-      }
-    } else {
-      // No fallback needed, use original config
-      finalProvider = providers[config.provider];
-    }
+    // Step 7: Use the provider from router (always OpenRouter now)
+    // Quality-based fallback removed - OpenRouter handles model selection
+    const finalConfig = config;
+    const finalProvider = providers[config.provider];
+    const usedFallback = false; // No fallback needed with OpenRouter
 
     // Validate final provider
     if (!finalProvider) {
@@ -475,84 +404,42 @@ export async function POST(req: NextRequest) {
             providerName: finalProvider.name,
             toolsUsed: requiredTools,
             costPer1M: finalConfig.costPer1M,
-            usedFallback, // Indicate if fallback was used
-            fallbackReason: usedFallback ? 'Quality assessment triggered upgrade to Kimi K2' : undefined,
+            usedFallback: false, // OpenRouter handles routing, no fallback needed
+            fallbackReason: undefined,
           };
           controller.enqueue(
             new TextEncoder().encode(`data: ${JSON.stringify(metadata)}\n\n`)
           );
 
-          // If we already have a good Groq response, stream it word-by-word for better UX
-          if (!usedFallback && groqResponse && groqResponse.length > 0) {
-            // Stream the Groq response we already have (word-by-word for smooth UX)
-            const words = groqResponse.split(/(\s+)/);
-            for (const word of words) {
-              if (word.trim()) {
-                controller.enqueue(
-                  new TextEncoder().encode(
-                    `data: ${JSON.stringify({ type: 'content', content: word })}\n\n`
-                  )
-                );
-                // Small delay for smooth streaming effect
-                await new Promise(resolve => setTimeout(resolve, 10));
-              } else {
-                // Include whitespace
-                controller.enqueue(
-                  new TextEncoder().encode(
-                    `data: ${JSON.stringify({ type: 'content', content: word })}\n\n`
-                  )
-                );
-              }
+          // Stream the response from OpenRouter
+          let usageData: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
+          
+          for await (const chunk of finalProvider.streamCall(enhancedMessages, {
+            model: finalConfig.model,
+            temperature: finalConfig.temperature,
+            maxTokens: finalConfig.maxTokens,
+            stream: true,
+          })) {
+            // Check if chunk contains usage data (some providers send it)
+            if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
+              usageData = (chunk as any).usage;
+              continue; // Skip usage data chunks, they're not content
             }
-
-            // Send usage data
-            if (groqUsage) {
-              controller.enqueue(
-                new TextEncoder().encode(
-                  `data: ${JSON.stringify({ type: 'usage', usage: groqUsage })}\n\n`
-                )
-              );
-            }
-          } else {
-            // Stream the actual response (either Groq or Kimi)
-            let usageData: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
             
-            for await (const chunk of finalProvider.streamCall(enhancedMessages, {
-              model: finalConfig.model,
-              temperature: finalConfig.temperature,
-              maxTokens: finalConfig.maxTokens,
-              stream: true,
-            })) {
-              // Check if chunk contains usage data (some providers send it)
-              if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
-                usageData = (chunk as any).usage;
-                continue; // Skip usage data chunks, they're not content
-              }
-              
-              controller.enqueue(
-                new TextEncoder().encode(
-                  `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
-                )
-              );
-            }
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
+              )
+            );
+          }
 
-            // Send usage data if available
-            if (usageData) {
-              controller.enqueue(
-                new TextEncoder().encode(
-                  `data: ${JSON.stringify({ type: 'usage', usage: usageData })}\n\n`
-                )
-              );
-            }
-
-            // If we used fallback, also send Groq usage for cost tracking
-            if (usedFallback && groqUsage) {
-              controller.enqueue(
-                new TextEncoder().encode(
-                  `data: ${JSON.stringify({ type: 'fallback_usage', usage: groqUsage, provider: 'groq', costPer1M: config.costPer1M })}\n\n`
-                )
-              );
-            }
+          // Send usage data if available
+          if (usageData) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: 'usage', usage: usageData })}\n\n`
+              )
+            );
           }
 
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));

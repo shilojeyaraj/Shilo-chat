@@ -302,8 +302,16 @@ export async function routeRequest(
   }
   const available = getAvailableProviders();
 
-  // If OpenRouter is available, prefer it for unified access
-  const useOpenRouter = available.openrouter;
+  // OpenRouter is now the primary provider - require it
+  if (!available.openrouter) {
+    throw new Error(
+      'OPEN_ROUTER_KEY is required. Please add it to your environment variables. ' +
+      'OpenRouter provides unified access to all models (Anthropic, Kimi, Groq, Perplexity, OpenAI, etc.) ' +
+      'with a single API key. Get your key at https://openrouter.ai'
+    );
+  }
+  
+  const useOpenRouter = true; // Always use OpenRouter when available
 
   let taskType = await classifyTask(
     lastMessage,
@@ -326,49 +334,17 @@ export async function routeRequest(
       // Auto-switch to Claude Haiku (cheapest) or OpenAI for vision
       console.log(`Auto-switching from ${overrideProvider} to Claude Haiku for image/file processing (cost-optimized)`);
       
-      // If OpenRouter is available, use it
-      if (useOpenRouter && available.openrouter) {
-        return {
-          config: {
-            provider: 'openrouter',
-            model: 'anthropic/claude-3.5-haiku', // OpenRouter model ID
-            maxTokens: 4096,
-            temperature: 0.7,
-            costPer1M: 0.8,
-          },
-          taskType: context.hasImages ? 'vision' : 'long_context',
-        };
-      }
-      
-      if (available.anthropic) {
-        return {
-          config: {
-            provider: 'anthropic',
-            model: 'claude-3-5-haiku-20241022', // Claude Haiku - 73% cheaper than Sonnet
-            maxTokens: 4096, // Reduced to save on output costs
-            temperature: 0.7,
-            costPer1M: 0.8, // Haiku pricing
-          },
-          taskType: context.hasImages ? 'vision' : 'long_context',
-        };
-      } else if (available.openai) {
-        return {
-          config: {
-            provider: 'openai',
-            model: 'gpt-4o',
-            maxTokens: 2048,
-            temperature: 0.7,
-            costPer1M: 5,
-          },
-          taskType: context.hasImages ? 'vision' : 'long_context',
-        };
-      } else {
-        throw new Error(
-          `Cannot use ${overrideProvider} with images/files. ` +
-          `Please add ANTHROPIC_API_KEY or OPENAI_API_KEY to use image/file analysis. ` +
-          `Only Claude and OpenAI support image extraction.`
-        );
-      }
+      // Always use OpenRouter for vision tasks
+      return {
+        config: {
+          provider: 'openrouter',
+          model: 'anthropic/claude-3.5-haiku', // OpenRouter model ID
+          maxTokens: 4096,
+          temperature: 0.7,
+          costPer1M: 0.8,
+        },
+        taskType: context.hasImages ? 'vision' : 'long_context',
+      };
     }
     
     // Check if override provider is available
@@ -419,132 +395,56 @@ export async function routeRequest(
                                taskType === 'web_search' || taskType === 'deep_research';
     
     if (isSearchOrResearch) {
-      // Force Perplexity for web search/research when deep web search is enabled
-      const available = getAvailableProviders();
-      if (available.perplexity) {
-        return {
-          config: {
-            provider: 'perplexity',
-            model: 'llama-3.1-sonar-large-128k-online',
-            maxTokens: 8192,
-            temperature: 0.3,
-            costPer1M: 5,
-          },
-          taskType: taskType === 'deep_research' ? 'deep_research' : 'web_search',
-        };
-      } else {
-        console.warn('Deep web search enabled but Perplexity API key not available');
-      }
+      // Use OpenRouter with Perplexity models for web search/research
+      return {
+        config: {
+          provider: 'openrouter',
+          model: taskType === 'deep_research' ? 'perplexity/sonar-pro-search' : 'perplexity/sonar',
+          maxTokens: 8192,
+          temperature: 0.3,
+          costPer1M: 5,
+        },
+        taskType: taskType === 'deep_research' ? 'deep_research' : 'web_search',
+      };
     }
   }
 
-  // CRITICAL: If images or files are present, MUST use Claude (preferred) or OpenAI
+  // CRITICAL: If images or files are present, MUST use Claude via OpenRouter
   // Kimi K2, Groq, and Perplexity do NOT support images/file extraction
   // Claude 3.5 Sonnet is the preferred choice for vision tasks
   if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
-    // If OpenRouter is available, use it with Claude model
-    if (useOpenRouter && available.openrouter) {
-      const visionConfig: ModelConfig = {
-        provider: 'openrouter',
-        model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
-        maxTokens: 8192,
-        temperature: 0.7,
-        costPer1M: 3,
-      };
-      
-      console.log(`Using OpenRouter (anthropic/claude-3.5-sonnet) for image/file processing`);
-      
-      return {
-        config: visionConfig,
-        taskType: context.hasImages ? 'vision' : 'long_context',
-      };
-    }
+    const visionConfig: ModelConfig = {
+      provider: 'openrouter',
+      model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
+      maxTokens: 8192,
+      temperature: 0.7,
+      costPer1M: 3,
+    };
     
-    // Force Claude (preferred) or OpenAI for vision and file processing
-    if (available.anthropic) {
-      const visionConfig: ModelConfig = {
-        provider: 'anthropic',
-        model: 'claude-3-5-sonnet-20240620', // Correct Claude 3.5 Sonnet model
-        maxTokens: 8192, // Claude handles large images well
-        temperature: 0.7,
-        costPer1M: 3,
-      };
-      
-      console.log(`Using Claude (claude-3-5-sonnet-20240620) for image/file processing`);
-      
-      return {
-        config: visionConfig,
-        taskType: context.hasImages ? 'vision' : 'long_context',
-      };
-    } else if (available.openai) {
-      const visionConfig: ModelConfig = {
-        provider: 'openai',
-        model: 'gpt-4o',
-        maxTokens: 2048, // Reduced for vision - images take most of the input token budget
-        temperature: 0.7,
-        costPer1M: 5,
-      };
-      
-      console.log(`Using OpenAI (gpt-4o) for image/file processing (Claude not available)`);
-      
-      return {
-        config: visionConfig,
-        taskType: context.hasImages ? 'vision' : 'long_context',
-      };
-    } else {
-      // No vision-capable provider available
-      throw new Error(
-        'Images or files detected but no vision-capable model is available. ' +
-        'Please add OPEN_ROUTER_KEY (preferred), ANTHROPIC_API_KEY, or OPENAI_API_KEY to use image/file analysis. ' +
-        'Kimi K2, Groq, and Perplexity do not support image extraction.'
-      );
-    }
+    console.log(`Using OpenRouter (anthropic/claude-3.5-sonnet) for image/file processing`);
+    
+    return {
+      config: visionConfig,
+      taskType: context.hasImages ? 'vision' : 'long_context',
+    };
   }
 
   // In coding mode, prefer coding-optimized models
   if (context.mode === 'coding') {
     // Override routing for coding mode - prefer Claude for code tasks
     if (taskType === 'code_generation' || taskType === 'code_editing') {
-      // If OpenRouter is available, use it with Claude model
-      if (useOpenRouter && available.openrouter) {
-        const codingConfig = {
-          provider: 'openrouter' as const,
-          model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
-          maxTokens: 8192,
-          temperature: 0.3,
-          costPer1M: 3,
-        };
-        
-        return {
-          config: codingConfig,
-          taskType,
-        };
-      }
-      
       const codingConfig = {
-        provider: 'anthropic' as const,
-        model: 'claude-3-5-sonnet-20240620',
+        provider: 'openrouter' as const,
+        model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
         maxTokens: 8192,
         temperature: 0.3,
         costPer1M: 3,
       };
       
-      // Check if Claude is available, otherwise fallback
-      if (available.anthropic) {
-        return {
-          config: codingConfig,
-          taskType,
-        };
-      } else {
-        // Fallback to best available coding model
-        const fallback = getBestAvailableProvider('anthropic', available);
-        if (fallback) {
-          return {
-            config: getFallbackConfig(fallback),
-            taskType,
-          };
-        }
-      }
+      return {
+        config: codingConfig,
+        taskType,
+      };
     }
   }
 
@@ -565,17 +465,7 @@ export async function routeRequest(
     };
   }
   
-  // If Kimi is not available for general tasks, try other providers
-  if (taskType === 'general' && !available.kimi && !useOpenRouter) {
-    // Fallback order: Groq > Anthropic > Perplexity
-    if (available.groq) {
-      config = getFallbackConfig('groq');
-    } else if (available.anthropic) {
-      config = getFallbackConfig('anthropic');
-    } else if (available.perplexity) {
-      config = getFallbackConfig('perplexity');
-    }
-  }
+  // All routing now goes through OpenRouter - no direct provider fallbacks needed
 
   return {
     config,

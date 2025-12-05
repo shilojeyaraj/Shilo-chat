@@ -27,21 +27,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Provider priority order for resume optimization (best quality first)
-    const providerPriority = [
-      { name: 'Kimi', model: 'kimi-k2-turbo-preview' }, // Kimi K2 - latest generation
-      { name: 'Anthropic', model: 'claude-3-5-sonnet-20241022' }, // Updated to latest version
-      { name: 'Groq', model: 'llama-3.3-70b-versatile' },
-      { name: 'OpenAI', model: 'gpt-4o-mini' },
-      { name: 'Gemini', model: 'gemini-1.5-pro' },
+    // Use OpenRouter with model priority (best quality first)
+    // All models accessed via OpenRouter
+    const modelPriority = [
+      'moonshotai/kimi-k2-turbo-preview',      // Kimi K2 - latest generation
+      'anthropic/claude-3.5-sonnet',           // Claude 3.5 Sonnet
+      'groq/llama-3.3-70b-versatile',          // Groq Llama 70B
+      'openai/gpt-4o-mini',                    // OpenAI GPT-4o Mini
+      'google/gemini-1.5-pro',                 // Gemini 1.5 Pro
     ];
 
-    // Find available providers in priority order
-    const availableProviders = Object.values(providers).filter(p => p.isAvailable());
-
-    if (availableProviders.length === 0) {
+    // Check if OpenRouter is available
+    const openRouterProvider = providers.openrouter;
+    if (!openRouterProvider || !openRouterProvider.isAvailable()) {
       return NextResponse.json(
-        { error: 'No AI provider available. Please configure API keys.' },
+        { error: 'OPEN_ROUTER_KEY is required. Please add it to your environment variables.' },
         { status: 500 }
       );
     }
@@ -300,20 +300,17 @@ Return the complete optimized LaTeX resume with ONLY the 4 required sections:`;
       },
     ];
 
-    // Try providers with automatic fallback on auth failures
+    // Try models via OpenRouter with automatic fallback
     let response;
     let lastError: Error | null = null;
-    const triedProviders: string[] = [];
+    const triedModels: string[] = [];
 
-    for (let i = 0; i < providerPriority.length; i++) {
-      const { name, model } = providerPriority[i];
-      const provider = availableProviders.find(p => p.name === name);
-      
-      if (!provider || triedProviders.includes(name)) continue;
+    for (const model of modelPriority) {
+      if (triedModels.includes(model)) continue;
 
       try {
-        triedProviders.push(name);
-        response = await provider.call(messages, {
+        triedModels.push(model);
+        response = await openRouterProvider.call(messages, {
           model,
           temperature: 0.3,
           maxTokens: 16384, // LaTeX can be very long
@@ -325,38 +322,38 @@ Return the complete optimized LaTeX resume with ONLY the 4 required sections:`;
         lastError = error;
         const errorMessage = error?.message || String(error);
         
-        // If it's an auth error, try next provider
+        // If it's an auth error, try next model
         if (errorMessage.includes('Authentication') || 
             errorMessage.includes('Invalid Authentication') ||
             errorMessage.includes('401') || 
             errorMessage.includes('403') ||
             errorMessage.includes('API key')) {
-          console.warn(`[Resume Optimize] ${name} auth failed, trying next provider...`);
-          continue; // Try next provider
+          console.warn(`[Resume Optimize] ${model} auth failed, trying next model...`);
+          continue; // Try next model
         }
         
-        // For other errors (rate limit, quota, etc.), also try next provider
+        // For other errors (rate limit, quota, etc.), also try next model
         if (errorMessage.includes('rate limit') || 
             errorMessage.includes('429') ||
             errorMessage.includes('quota') ||
             errorMessage.includes('funding')) {
-          console.warn(`[Resume Optimize] ${name} failed (${errorMessage}), trying next provider...`);
+          console.warn(`[Resume Optimize] ${model} failed (${errorMessage}), trying next model...`);
           continue;
         }
         
-        // For unexpected errors, still try next provider but log it
-        console.warn(`[Resume Optimize] ${name} error: ${errorMessage}, trying next provider...`);
+        // For unexpected errors, still try next model but log it
+        console.warn(`[Resume Optimize] ${model} error: ${errorMessage}, trying next model...`);
         continue;
       }
     }
 
-    // If we tried all providers and none worked
+    // If we tried all models and none worked
     if (!response) {
-      const errorMsg = lastError?.message || 'All providers failed';
+      const errorMsg = lastError?.message || 'All models failed';
       return NextResponse.json(
         { 
-          error: `Failed to optimize resume. Tried: ${triedProviders.join(', ')}. Last error: ${errorMsg}`,
-          triedProviders 
+          error: `Failed to optimize resume. Tried models: ${triedModels.join(', ')}. Last error: ${errorMsg}`,
+          triedModels 
         },
         { status: 500 }
       );

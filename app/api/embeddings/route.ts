@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * API endpoint for generating embeddings
- * This keeps the OpenAI API key secure on the server
+ * NOTE: OpenRouter does not support embeddings API, so we still use OpenAI directly
+ * This is the only route that still requires OPENAI_API_KEY
  */
 export async function POST(req: NextRequest) {
   try {
