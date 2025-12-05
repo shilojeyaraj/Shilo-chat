@@ -97,6 +97,28 @@ const TASK_ICONS: Record<string, any> = {
   general: Brain,
 };
 
+// Image component with loading skeleton
+function ImageWithSkeleton({ src, alt }: { src: string; alt: string }) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  
+  return (
+    <div className="relative">
+      {!imageLoaded && (
+        <div className="absolute inset-0 skeleton rounded-lg" style={{ minHeight: '200px' }} />
+      )}
+      <img
+        src={src}
+        alt={alt}
+        className={`max-w-full h-auto rounded-lg transition-opacity duration-300 ${
+          imageLoaded ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{ maxHeight: '300px' }}
+        onLoad={() => setImageLoaded(true)}
+      />
+    </div>
+  );
+}
+
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -1439,7 +1461,7 @@ export default function ChatInterface() {
         <div 
           ref={messagesContainerRef}
           onScroll={throttledCheckIfAtBottom}
-          className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-6 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 relative smooth-scroll"
+          className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 relative smooth-scroll"
           style={{
             scrollBehavior: 'smooth',
             WebkitOverflowScrolling: 'touch',
@@ -1455,7 +1477,7 @@ export default function ChatInterface() {
                 setIsAtBottom(true);
                 setShowScrollButton(false);
               }}
-              className="fixed bottom-24 right-8 z-50 p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center gap-2"
+              className="fixed bottom-24 right-8 z-50 p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 active:scale-95 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4"
               title="Scroll to bottom"
             >
               <ArrowDown className="w-5 h-5" />
@@ -1463,8 +1485,8 @@ export default function ChatInterface() {
           )}
           {messages.length === 0 && (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center max-w-md">
-                <div className="text-4xl mb-4">
+              <div className="text-center max-w-md animate-in fade-in duration-500">
+                <div className="text-4xl mb-4 animate-bounce" style={{ animationDuration: '2s', animationIterationCount: 'infinite' }}>
                   {mode === 'coding' ? '💻' : '👋'}
                 </div>
                 <p className="text-xl text-slate-200 mb-2 font-medium">
@@ -1479,10 +1501,10 @@ export default function ChatInterface() {
                 </p>
                 {mode === 'coding' && (
                   <div className="text-sm text-slate-500 space-y-1 mt-4">
-                    <p>• Production-ready code with error handling</p>
-                    <p>• Multi-file architecture design</p>
-                    <p>• Code review and optimization</p>
-                    <p>• Best practices and design patterns</p>
+                    <p className="animate-in fade-in" style={{ animationDelay: '100ms' }}>• Production-ready code with error handling</p>
+                    <p className="animate-in fade-in" style={{ animationDelay: '200ms' }}>• Multi-file architecture design</p>
+                    <p className="animate-in fade-in" style={{ animationDelay: '300ms' }}>• Code review and optimization</p>
+                    <p className="animate-in fade-in" style={{ animationDelay: '400ms' }}>• Best practices and design patterns</p>
                   </div>
                 )}
               </div>
@@ -1492,7 +1514,8 @@ export default function ChatInterface() {
           {messages.map((message, msgIndex) => (
             <div
               key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}
+              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group message-enter`}
+              style={{ animationDelay: `${msgIndex * 50}ms` }}
             >
               <div className="max-w-2xl relative w-fit">
                 {editingMessageId === message.id && message.role === 'user' ? (
@@ -1560,10 +1583,10 @@ export default function ChatInterface() {
                   </div>
                 ) : (
                 <div
-                  className={`rounded-2xl px-5 py-4 shadow-lg transition-all duration-200 break-words overflow-wrap-anywhere ${
+                  className={`rounded-2xl px-5 py-4 shadow-xl transition-all duration-200 break-words overflow-wrap-anywhere hover:shadow-2xl ${
                     message.role === 'user'
-                      ? 'bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-600 text-white'
-                      : 'bg-slate-800/80 backdrop-blur-sm text-slate-100 border border-slate-700/50'
+                      ? 'bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-indigo-500/20'
+                      : 'bg-slate-800/80 backdrop-blur-sm text-slate-100 border border-slate-700/50 shadow-slate-900/50'
                   }`}
                   style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
                 >
@@ -1571,13 +1594,7 @@ export default function ChatInterface() {
                   {message.images && message.images.length > 0 && (
                     <div className="mb-3 space-y-2">
                       {message.images.map((img, idx) => (
-                        <img
-                          key={idx}
-                          src={img}
-                          alt={`Uploaded image ${idx + 1}`}
-                          className="max-w-full h-auto rounded-lg"
-                          style={{ maxHeight: '300px' }}
-                        />
+                        <ImageWithSkeleton key={idx} src={img} alt={`Uploaded image ${idx + 1}`} />
                       ))}
                     </div>
                   )}
@@ -1759,9 +1776,13 @@ export default function ChatInterface() {
           ))}
 
           {isLoading && (
-            <div className="flex justify-start">
+            <div className="flex justify-start message-enter">
               <div className="bg-slate-800/80 backdrop-blur-sm rounded-2xl px-5 py-4 border border-slate-700/50 shadow-lg">
-                <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                <div className="flex items-center gap-2">
+                  <span className="typing-dot w-2 h-2 bg-indigo-400 rounded-full"></span>
+                  <span className="typing-dot w-2 h-2 bg-indigo-400 rounded-full"></span>
+                  <span className="typing-dot w-2 h-2 bg-indigo-400 rounded-full"></span>
+                </div>
               </div>
             </div>
           )}
@@ -1913,7 +1934,7 @@ export default function ChatInterface() {
                   onKeyDown={handleKeyPress}
                   onPaste={handleImagePaste}
                   placeholder="Type your message... (Attach files with 📎 or images with 📷)"
-                  className="w-full px-4 py-3.5 bg-slate-800/50 text-white rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 border border-slate-700/50 placeholder:text-slate-500 transition-all duration-200 shadow-lg backdrop-blur-sm"
+                  className="w-full px-4 py-3.5 bg-slate-800/50 text-white rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 border border-slate-700/50 placeholder:text-slate-500 placeholder-animate transition-all duration-200 shadow-lg backdrop-blur-sm focus:shadow-indigo-500/20"
                   rows={1}
                   disabled={isLoading}
                   style={{ 
@@ -1961,7 +1982,11 @@ export default function ChatInterface() {
                 onClick={handleSend}
                 disabled={isLoading || (!input.trim() && selectedImages.length === 0 && attachedFiles.length === 0) || editingMessageId !== null}
                 data-send-button
-                className="w-12 h-12 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:via-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-105 active:scale-95 disabled:hover:scale-100"
+                className="w-12 h-12 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 hover:from-indigo-500 hover:via-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl flex items-center justify-center transition-all duration-200 flex-shrink-0 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-110 active:scale-95 disabled:hover:scale-100 hover:animate-pulse-glow"
+                style={{ 
+                  boxShadow: isLoading ? '0 0 20px 5px rgba(99, 102, 241, 0.6)' : undefined,
+                  animation: isLoading ? 'pulse-glow 2s infinite' : undefined
+                }}
                 title="Send message"
               >
                 {isLoading ? (
