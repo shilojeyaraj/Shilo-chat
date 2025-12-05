@@ -190,11 +190,40 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to optimize resume');
+          // Check if response is JSON or HTML
+          const contentType = response.headers.get('content-type');
+          let errorMsg = 'Failed to optimize resume';
+          
+          if (contentType && contentType.includes('application/json')) {
+            try {
+              const error = await response.json();
+              errorMsg = error.error || error.details || errorMsg;
+            } catch (e) {
+              // If JSON parsing fails, use default message
+              errorMsg = `Server error (${response.status}): ${response.statusText}`;
+            }
+          } else {
+            // Response is HTML (error page) or other non-JSON
+            const text = await response.text();
+            errorMsg = `Server error (${response.status}): ${response.statusText}`;
+            console.error('Non-JSON error response:', text.substring(0, 200));
+          }
+          
+          throw new Error(errorMsg);
+        }
+
+        // Check content type before parsing
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('Non-JSON response:', text.substring(0, 200));
+          throw new Error('Server returned invalid response format');
         }
 
         const data = await response.json();
+        if (!data.optimizedLatex) {
+          throw new Error('No optimized resume returned from server');
+        }
         setOptimizedContent(data.optimizedLatex);
         toast.success('Resume optimized successfully!');
       } else {
@@ -225,17 +254,54 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to optimize cover letter');
+          // Check if response is JSON or HTML
+          const contentType = response.headers.get('content-type');
+          let errorMsg = 'Failed to optimize cover letter';
+          
+          if (contentType && contentType.includes('application/json')) {
+            try {
+              const error = await response.json();
+              errorMsg = error.error || error.details || errorMsg;
+            } catch (e) {
+              // If JSON parsing fails, use default message
+              errorMsg = `Server error (${response.status}): ${response.statusText}`;
+            }
+          } else {
+            // Response is HTML (error page) or other non-JSON
+            const text = await response.text();
+            errorMsg = `Server error (${response.status}): ${response.statusText}`;
+            console.error('Non-JSON error response:', text.substring(0, 200));
+          }
+          
+          throw new Error(errorMsg);
+        }
+
+        // Check content type before parsing
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const text = await response.text();
+          console.error('Non-JSON response:', text.substring(0, 200));
+          throw new Error('Server returned invalid response format');
         }
 
         const data = await response.json();
+        if (!data.optimizedCoverLetter) {
+          throw new Error('No optimized cover letter returned from server');
+        }
         setOptimizedContent(data.optimizedCoverLetter);
         toast.success('Cover letter optimized successfully!');
       }
     } catch (error: any) {
       console.error('Optimization error:', error);
-      toast.error(error.message || 'Failed to optimize');
+      const errorMessage = error?.message || 'Failed to optimize';
+      toast.error(errorMessage, { 
+        duration: 5000,
+        icon: '❌',
+        style: {
+          background: '#dc2626',
+          color: '#fff',
+        }
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -548,12 +614,12 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
                   {isGenerating ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      Optimizing Resume...
+                      {mode === 'resume' ? 'Optimizing Resume...' : 'Optimizing Cover Letter...'}
                     </>
                   ) : (
                     <>
                       <FileText className="w-5 h-5" />
-                      Optimize Resume for Job
+                      {mode === 'resume' ? 'Optimize Resume for Job' : 'Optimize Cover Letter for Job'}
                     </>
                   )}
                 </button>

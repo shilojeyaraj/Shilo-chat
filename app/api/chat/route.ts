@@ -415,7 +415,7 @@ export async function POST(req: NextRequest) {
             usedFallback = true;
             finalConfig = {
               provider: 'kimi',
-              model: 'moonshot-v1-128k',
+              model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation
               maxTokens: 4096,
               temperature: 0.7,
               costPer1M: 1.2,
@@ -429,7 +429,7 @@ export async function POST(req: NextRequest) {
         usedFallback = true;
         finalConfig = {
           provider: 'kimi',
-          model: 'moonshot-v1-128k',
+          model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation
           maxTokens: 4096,
           temperature: 0.7,
           costPer1M: 1.2,

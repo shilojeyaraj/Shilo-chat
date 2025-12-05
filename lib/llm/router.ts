@@ -54,7 +54,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   reasoning: {
     provider: 'kimi',
-    model: 'moonshot-v1-128k', // Kimi K2 - excellent reasoning
+    model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation, excellent reasoning
     maxTokens: 4096,
     temperature: 0.8,
     costPer1M: 1.2, // Kimi pricing is typically lower than OpenAI
@@ -75,7 +75,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   data_analysis: {
     provider: 'kimi',
-    model: 'moonshot-v1-128k', // Kimi K2 - great for data analysis
+    model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation, great for data analysis
     maxTokens: 4096,
     temperature: 0.3,
     costPer1M: 1.2,
@@ -96,7 +96,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   study: {
     provider: 'kimi', // Kimi K2 for better reasoning in study mode
-    model: 'moonshot-v1-128k', // Kimi K2 - excellent for educational content
+    model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation, excellent for educational content
     maxTokens: 8192, // Longer context for study materials
     temperature: 0.7,
     costPer1M: 1.2,
@@ -224,7 +224,7 @@ function getFallbackConfig(
     },
     kimi: {
       provider: 'kimi',
-      model: 'moonshot-v1-128k', // Kimi K2
+      model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation
       maxTokens: 4096,
       temperature: 0.7,
       costPer1M: 1.2,

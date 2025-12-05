@@ -358,9 +358,9 @@ const kimiProvider: LLMProvider = {
     const hasImages = formattedMessages.some((m: any) => 
       Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
     );
-    // Kimi K2 models: moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k
-    // Default to 128k for best context window
-    const modelName = config.model || 'moonshot-v1-128k';
+    // Kimi K2 models: kimi-k2-0905-preview, kimi-k2-turbo-preview, kimi-k2-thinking, kimi-k2-thinking-turbo
+    // Default to kimi-k2-turbo-preview for best balance of speed and quality
+    const modelName = config.model || 'kimi-k2-turbo-preview';
 
     const requestBody: any = {
       model: modelName,
@@ -389,7 +389,8 @@ const kimiProvider: LLMProvider = {
       throw new Error('KIMI_API_KEY is empty. Please check your Vercel environment variables.');
     }
 
-    const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+    // Use the correct Kimi K2 API endpoint (api.moonshot.ai for K2 models)
+    const response = await fetch('https://api.moonshot.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${trimmedKey}`,
@@ -518,9 +519,9 @@ const kimiProvider: LLMProvider = {
     const hasImages = formattedMessages.some((m: any) => 
       Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url')
     );
-    // Kimi K2 models: moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k
-    // Default to 128k for best context window
-    const modelName = config.model || 'moonshot-v1-128k';
+    // Kimi K2 models: kimi-k2-0905-preview, kimi-k2-turbo-preview, kimi-k2-thinking, kimi-k2-thinking-turbo
+    // Default to kimi-k2-turbo-preview for best balance of speed and quality
+    const modelName = config.model || 'kimi-k2-turbo-preview';
 
     const requestBody: any = {
       model: modelName,
@@ -563,7 +564,8 @@ const kimiProvider: LLMProvider = {
       throw new Error('KIMI_API_KEY is empty. Please check your Vercel environment variables.');
     }
 
-    const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+    // Use the correct Kimi K2 API endpoint (api.moonshot.ai for K2 models)
+    const response = await fetch('https://api.moonshot.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${trimmedKey}`,
