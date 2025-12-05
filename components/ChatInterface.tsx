@@ -1113,7 +1113,7 @@ export default function ChatInterface() {
   return (
     <div className="flex h-screen w-screen fixed top-0 left-0 right-0 bottom-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-hidden">
       {/* Left Sidebar */}
-      <div className="w-64 bg-slate-900/80 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl">
+      <div className="w-64 bg-slate-900/80 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl min-w-0 overflow-hidden">
         {/* New Chat Button */}
         <div className="p-4 border-b border-slate-800/50">
           <button
@@ -1184,7 +1184,7 @@ export default function ChatInterface() {
               <div
                 key={conv.conversationId}
                 className={`
-                  group px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer
+                  group px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer min-w-0 overflow-hidden
                   ${currentConversationId === conv.conversationId && !multiSelectMode
                     ? 'bg-gradient-to-r from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 shadow-lg shadow-indigo-500/10'
                     : isSelected
@@ -1222,11 +1222,11 @@ export default function ChatInterface() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
                       {multiSelectMode && (
                         <button
                           onClick={(e) => handleDeleteConversation(conv.conversationId, e)}
-                          className="mt-1 p-1 text-slate-400 hover:text-indigo-400 transition-all duration-200"
+                          className="mt-1 p-1 text-slate-400 hover:text-indigo-400 transition-all duration-200 flex-shrink-0"
                         >
                           {isSelected ? (
                             <CheckSquare className="w-4 h-4 text-indigo-400" />
@@ -1237,12 +1237,12 @@ export default function ChatInterface() {
                       )}
                       <div 
                         onClick={() => !multiSelectMode && handleLoadConversation(conv.conversationId)}
-                        className={`flex-1 ${!multiSelectMode ? 'cursor-pointer' : ''}`}
+                        className={`flex-1 min-w-0 ${!multiSelectMode ? 'cursor-pointer' : ''}`}
                       >
-                        <div className="text-sm font-medium text-white truncate mb-1">
+                        <div className="text-sm font-medium text-white truncate mb-1 break-words overflow-wrap-anywhere" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                           {conv.title}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-400 truncate">
                           {formatConversationTime(conv.updatedAt)}
                         </div>
                       </div>
@@ -1494,7 +1494,7 @@ export default function ChatInterface() {
               key={message.id}
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}
             >
-              <div className="max-w-2xl relative w-full">
+              <div className="max-w-2xl relative w-fit">
                 {editingMessageId === message.id && message.role === 'user' ? (
                   <div className="rounded-2xl px-5 py-4 shadow-lg bg-slate-800/90 backdrop-blur-sm border border-indigo-500/50">
                     <textarea
