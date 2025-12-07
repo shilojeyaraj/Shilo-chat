@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { providers } from '@/lib/llm/providers';
 import { Message } from '@/lib/llm/types';
+import { routeAgentToOptimalLLM, getAgentFallbackChain } from '@/lib/llm/agent-router';
+import { getExtractionPrompt } from '@/lib/prompts/agent-prompts';
 
 /**
  * Extract structured personal information from uploaded files
@@ -91,70 +93,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use AI to extract structured information
-    const extractionPrompt = `You are an expert at extracting structured information from resumes, CVs, and personal documents.
+    // Use agent-specific routing for extraction
+    // Optimal: GPT-4o (fast multimodal, excellent structured output)
+    const config = routeAgentToOptimalLLM('extract', {});
+    const fallbackChain = getAgentFallbackChain('extract');
 
-Extract the following information from the document and return it as JSON. If information is not found, use null or empty arrays.
-
-Document content:
-${textContent.substring(0, 8000)}${textContent.length > 8000 ? '...' : ''}
-
-Return a JSON object with this structure:
-{
-  "contact": {
-    "name": "Full name",
-    "email": "Email address",
-    "phone": "Phone number",
-    "location": "City, State/Country",
-    "linkedin": "LinkedIn URL if found",
-    "github": "GitHub URL if found",
-    "website": "Personal website URL if found"
-  },
-  "experience": [
-    {
-      "title": "Job title",
-      "company": "Company name",
-      "location": "Location",
-      "startDate": "Start date (e.g., 'Jan 2020' or '2020')",
-      "endDate": "End date (e.g., 'Present', 'Dec 2023', or '2023')",
-      "description": "Job description and key achievements"
-    }
-  ],
-  "education": [
-    {
-      "degree": "Degree name (e.g., 'Bachelor of Science in Computer Science')",
-      "institution": "University/School name",
-      "location": "Location",
-      "graduationDate": "Graduation date (e.g., '2020' or 'May 2020')",
-      "gpa": "GPA if mentioned",
-      "description": "Additional details"
-    }
-  ],
-  "skills": [
-    "List of technical skills, programming languages, tools, etc."
-  ],
-  "projects": [
-    {
-      "name": "Project name",
-      "description": "Project description",
-      "technologies": ["List of technologies used"],
-      "url": "Project URL if available"
-    }
-  ],
-  "achievements": [
-    "List of achievements, awards, certifications, etc."
-  ],
-  "summary": "Professional summary or objective if present"
-}
-
-IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON object.`;
+    // Use optimized extraction prompt
+    const extractionPrompt = getExtractionPrompt(textContent);
 
     // Use OpenRouter for extraction (unified access to all models)
     const openRouterProvider = providers.openrouter;
-    
-    console.log('[Personal Info Extract] Checking OpenRouter provider availability...');
-    console.log('[Personal Info Extract] OpenRouter provider exists:', !!openRouterProvider);
-    console.log('[Personal Info Extract] OpenRouter isAvailable:', openRouterProvider?.isAvailable());
     
     if (!openRouterProvider || !openRouterProvider.isAvailable()) {
       console.error('[Personal Info Extract] OpenRouter provider not available. OPEN_ROUTER_KEY is required.');
@@ -175,46 +123,45 @@ IMPORTANT: Return ONLY valid JSON, no markdown, no code blocks, just the JSON ob
       },
     ];
 
-    // Use Groq's Llama 3.3 70B model via OpenRouter
-    const model = 'groq/llama-3.3-70b-versatile';
-
-    console.log('[Personal Info Extract] Using OpenRouter provider with model:', model);
-    console.log('[Personal Info Extract] Request config:', {
-      model,
-      temperature: 0.2,
-      maxTokens: 8192,
-    });
-
+    // Use agent config (GPT-4o optimal for extraction)
+    const modelsToTry = [config, ...fallbackChain].map(c => c.model);
     let response;
-    try {
-      response = await openRouterProvider.call(messages, {
-        model,
-        temperature: 0.2, // Lower temperature for more consistent, structured extraction
-        maxTokens: 8192, // More tokens for comprehensive extraction
-        stream: false,
-      });
-      console.log('[Personal Info Extract] OpenRouter extraction successful');
-    } catch (error: any) {
-      console.error('OpenRouter extraction error:', error);
-      const errorMessage = error.message || String(error);
-      
-      // Provide more specific error messages
-      if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Invalid') || errorMessage.includes('Authentication')) {
-        throw new Error(
-          `Authentication failed. Please check that OPEN_ROUTER_KEY is set correctly in Vercel environment variables and you have redeployed.`
-        );
+    let lastError: Error | null = null;
+    const triedModels: string[] = [];
+
+    for (const model of modelsToTry) {
+      if (triedModels.includes(model)) continue;
+
+      try {
+        triedModels.push(model);
+        const modelConfig = [config, ...fallbackChain].find(c => c.model === model) || config;
+
+        response = await openRouterProvider.call(messages, {
+          model,
+          temperature: modelConfig.temperature,
+          maxTokens: modelConfig.maxTokens || 8192,
+          stream: false,
+        });
+        
+        break;
+      } catch (error: any) {
+        lastError = error;
+        const errorMessage = error?.message || String(error);
+        
+        console.warn(`[Personal Info Extract] ${model} failed: ${errorMessage}`);
+        
+        // Try next model in fallback chain
+        if (modelsToTry.indexOf(model) < modelsToTry.length - 1) {
+          continue;
+        }
+        
+        // If this was the last model, throw the error
+        throw error;
       }
-      
-      if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
-        throw new Error(
-          `Rate limit exceeded. Please try again in a few moments.`
-        );
-      }
-      
-      throw new Error(
-        `Failed to extract information: ${errorMessage}. ` +
-        `Please ensure OPEN_ROUTER_KEY is configured correctly.`
-      );
+    }
+
+    if (!response) {
+      throw lastError || new Error('All models failed for extraction');
     }
 
     // Parse the response (LLMResponse has a content field)

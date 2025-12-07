@@ -26,88 +26,88 @@ export interface ModelConfig {
 
 const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   web_search: {
-    provider: 'perplexity',
-    model: 'llama-3.1-sonar-large-128k-online',
+    provider: 'openrouter',
+    model: 'perplexity/sonar', // Perplexity Sonar via OpenRouter
     maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 5,
+    costPer1M: 0.2,
   },
   deep_research: {
-    provider: 'perplexity',
-    model: 'llama-3.1-sonar-large-128k-online', // Perplexity's research model
+    provider: 'openrouter',
+    model: 'perplexity/sonar-pro-search', // Perplexity Pro Search for deep research via OpenRouter
     maxTokens: 8192, // More tokens for comprehensive research
     temperature: 0.3, // Lower temperature for more factual, comprehensive responses
-    costPer1M: 5,
+    costPer1M: 15,
   },
   code_generation: {
-    provider: 'groq',
-    model: 'llama-3.3-70b-versatile',
+    provider: 'openrouter',
+    model: 'groq/llama-3.3-70b-versatile', // Groq via OpenRouter
     maxTokens: 8192,
     temperature: 0.3,
     costPer1M: 0.27,
   },
   code_editing: {
-    provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20240620',
+    provider: 'openrouter',
+    model: 'anthropic/claude-3.5-sonnet', // Claude Sonnet 4.5 via OpenRouter
     maxTokens: 8192,
     temperature: 0.5,
     costPer1M: 3,
   },
   reasoning: {
-    provider: 'kimi',
-    model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation, excellent reasoning
+    provider: 'openrouter',
+    model: 'moonshotai/kimi-k2-turbo-preview', // Kimi K2 via OpenRouter
     maxTokens: 4096,
     temperature: 0.8,
-    costPer1M: 1.2, // Kimi pricing is typically lower than OpenAI
+    costPer1M: 1.2,
   },
   quick_qa: {
-    provider: 'groq',
-    model: 'llama-3.1-8b-instant',
+    provider: 'openrouter',
+    model: 'groq/llama-3.1-8b-instant', // Groq via OpenRouter
     maxTokens: 2048,
     temperature: 0.7,
     costPer1M: 0.05,
   },
   creative_writing: {
-    provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20240620',
+    provider: 'openrouter',
+    model: 'anthropic/claude-3.5-sonnet', // Claude Sonnet 4.5 via OpenRouter
     maxTokens: 8192,
     temperature: 1.0,
     costPer1M: 3,
   },
   data_analysis: {
-    provider: 'kimi',
-    model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation, great for data analysis
+    provider: 'openrouter',
+    model: 'moonshotai/kimi-k2-turbo-preview', // Kimi K2 via OpenRouter
     maxTokens: 4096,
     temperature: 0.3,
     costPer1M: 1.2,
   },
   long_context: {
-    provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20240620',
+    provider: 'openrouter',
+    model: 'anthropic/claude-3.5-sonnet', // Claude Sonnet 4.5 via OpenRouter
     maxTokens: 8192,
     temperature: 0.7,
     costPer1M: 3,
   },
   vision: {
-    provider: 'anthropic', // Claude 3.5 Haiku for vision (73% cheaper than Sonnet)
-    model: 'claude-3-5-haiku-20241022', // Claude Haiku - much cheaper for vision
-    maxTokens: 4096, // Reduced to save on output costs
+    provider: 'openrouter',
+    model: 'anthropic/claude-3.5-haiku', // Claude Haiku via OpenRouter (cheaper for vision)
+    maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 0.8, // Haiku: $0.80/1M input, $4/1M output (vs Sonnet $3/$15)
+    costPer1M: 0.8, // Haiku: $0.80/1M input, $4/1M output
   },
   study: {
-    provider: 'kimi', // Kimi K2 for better reasoning in study mode
-    model: 'kimi-k2-turbo-preview', // Kimi K2 - latest generation, excellent for educational content
-    maxTokens: 8192, // Longer context for study materials
+    provider: 'openrouter',
+    model: 'moonshotai/kimi-k2-turbo-preview', // Kimi K2 via OpenRouter
+    maxTokens: 8192,
     temperature: 0.7,
     costPer1M: 1.2,
   },
   general: {
-    provider: 'groq', // Try Groq first, fallback to Kimi if quality is low
-    model: 'llama-3.1-8b-instant', // Fast and cheap for initial attempt
+    provider: 'openrouter',
+    model: 'groq/llama-3.1-8b-instant', // Groq via OpenRouter (fast and cheap)
     maxTokens: 4096,
     temperature: 0.7,
-    costPer1M: 0.05, // Groq pricing
+    costPer1M: 0.05,
   },
 };
 
@@ -332,8 +332,6 @@ export async function routeRequest(
     if ((context.hasImages || (context.fileCount && context.fileCount > 0)) && 
         (overrideProvider === 'groq' || overrideProvider === 'perplexity' || overrideProvider === 'kimi' || overrideProvider === 'gemini')) {
       // Auto-switch to Claude Haiku (cheapest) or OpenAI for vision
-      console.log(`Auto-switching from ${overrideProvider} to Claude Haiku for image/file processing (cost-optimized)`);
-      
       // Always use OpenRouter for vision tasks
       return {
         config: {
@@ -420,8 +418,6 @@ export async function routeRequest(
       temperature: 0.7,
       costPer1M: 3,
     };
-    
-    console.log(`Using OpenRouter (anthropic/claude-3.5-sonnet) for image/file processing`);
     
     return {
       config: visionConfig,

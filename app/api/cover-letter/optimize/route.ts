@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { providers } from '@/lib/llm/providers';
 import { Message } from '@/lib/llm/types';
+import { routeAgentToOptimalLLM, getAgentFallbackChain } from '@/lib/llm/agent-router';
+import { getCoverLetterOptimizationPrompt } from '@/lib/prompts/agent-prompts';
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,15 +29,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use OpenRouter with model priority (best quality first)
-    // All models accessed via OpenRouter
-    const modelPriority = [
-      'moonshotai/kimi-k2-turbo-preview',      // Kimi K2 - latest generation
-      'anthropic/claude-3.5-sonnet',           // Claude 3.5 Sonnet
-      'groq/llama-3.3-70b-versatile',          // Groq Llama 70B
-      'openai/gpt-4o-mini',                    // OpenAI GPT-4o Mini
-      'google/gemini-1.5-pro',                  // Gemini 1.5 Pro
-    ];
+    // Use agent-specific routing for cover letter optimization
+    // Optimal: Claude Sonnet 4.5 (nuanced writing, tone adaptation)
+    const config = routeAgentToOptimalLLM('cover-letter', {});
+    const fallbackChain = getAgentFallbackChain('cover-letter');
 
     // Check if OpenRouter is available
     const openRouterProvider = providers.openrouter;
@@ -46,58 +43,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const prompt = `You are an expert cover letter writer. Your task is to optimize a cover letter for a specific job posting while PRESERVING THE EXACT STRUCTURE AND FORMATTING of the template.
-
-CRITICAL REQUIREMENTS:
-1. Keep ALL formatting, paragraph structure, and layout EXACTLY as they are in the template
-2. PRESERVE THE EXACT ORDER OF PARAGRAPHS - do NOT reorder paragraphs
-3. PRESERVE THE EXACT POSITION AND STRUCTURE of each paragraph - keep paragraphs in the same location
-4. Only modify the CONTENT within paragraphs (sentences, phrases, specific details)
-5. Do NOT change the greeting, closing, or signature format
-6. Use ONLY information from the user's personal information provided below - do NOT use any content from the original template
-7. Match the tone and style of the original template
-8. Keep the same paragraph order, paragraph positions, and formatting
-
-USER'S PERSONAL INFORMATION (USE ONLY THIS DATA):
-${personalInfoContext}
-
-ORIGINAL COVER LETTER TEMPLATE (USE ONLY FOR STRUCTURE/FORMATTING):
-${coverLetterTemplate}
-
-JOB POSTING:
-${jobPosting}
-
-${customPrompt ? `\n\nCUSTOM INSTRUCTIONS (PRIORITY - follow these specific requirements):\n${customPrompt}\n\n` : ''}
-
-TASK:
-Optimize the cover letter content to match the job posting by:
-${customPrompt ? `- Following the custom instructions provided above (this takes priority)\n` : ''}
-- Selecting the most relevant experiences from personal info that match job requirements
-- Selecting the most relevant skills from personal info that match job requirements
-- Selecting the most relevant projects from personal info that match job requirements
-- Rewriting sentences and paragraphs using ONLY information from personal info
-- Using keywords from the job posting naturally in the content
-- Keeping ALL structure, formatting, and PARAGRAPH ORDER identical to the template
-
-CRITICAL STRUCTURE RULES:
-- Keep greeting in the exact same position and format
-- Keep each paragraph in the exact same position as in the template
-- Keep closing in the exact same position and format
-- Do NOT reorder paragraphs - only swap out the content within each paragraph
-- If the template has paragraphs in a specific order, keep that exact order
-- Only modify sentences, phrases, and details - NOT paragraph positions or order
-
-IMPORTANT RULES:
-- Return ONLY the optimized cover letter text
-- Do NOT include markdown code blocks or explanations
-- Do NOT change greeting, closing, or signature format
-- Only modify text content within paragraphs - NOT paragraph positions
-- Use ONLY data from the personal information provided - ignore any content in the original template
-- Keep the exact same formatting, structure, and PARAGRAPH ORDER as the template
-- If a paragraph in the template has placeholder content, replace it with relevant data from personal info
-- If personal info doesn't have data for a paragraph, keep the paragraph structure but adapt it appropriately
-
-Return the complete optimized cover letter:`;
+    // Use optimized cover letter prompt
+    const prompt = getCoverLetterOptimizationPrompt(personalInfoContext, coverLetterTemplate, jobPosting, customPrompt);
 
     const messages: Message[] = [
       {
@@ -110,20 +57,24 @@ Return the complete optimized cover letter:`;
       },
     ];
 
-    // Try models via OpenRouter with automatic fallback
+    // Try models via OpenRouter with automatic fallback using agent fallback chain
     let response;
     let lastError: Error | null = null;
     const triedModels: string[] = [];
 
-    for (const model of modelPriority) {
+    // Use agent config and fallback chain
+    const modelsToTry = [config, ...fallbackChain].map(c => c.model);
+
+    for (const model of modelsToTry) {
       if (triedModels.includes(model)) continue;
 
       try {
         triedModels.push(model);
+        const modelConfig = [config, ...fallbackChain].find(c => c.model === model) || config;
         response = await openRouterProvider.call(messages, {
           model,
-          temperature: 0.4, // Slightly higher for more natural writing
-          maxTokens: 4096,
+          temperature: modelConfig.temperature,
+          maxTokens: modelConfig.maxTokens || 4096,
           stream: false,
         });
         // Success! Break out of loop

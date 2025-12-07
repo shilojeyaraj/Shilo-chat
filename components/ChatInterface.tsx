@@ -67,13 +67,15 @@ interface CostData {
 // Model options will be loaded dynamically based on available providers
 const DEFAULT_MODEL_OPTIONS = [
   { value: '', label: 'Auto-select (Kimi K2 default)' },
-  { value: 'kimi/moonshot-v1-128k', label: 'Kimi K2 (Default)' },
+  { value: 'moonshotai/kimi-k2-turbo-preview', label: 'Kimi K2 (Default)' },
   { value: 'groq/llama-3.1-8b-instant', label: 'Llama 8B (Fastest)' },
   { value: 'groq/llama-3.3-70b-versatile', label: 'Llama 70B (Balanced)' },
-  { value: 'gemini/gemini-2.0-flash-exp', label: 'Gemini 2.0 (Vision - Best)' },
+  { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 (Vision - Best)' },
   { value: 'openai/gpt-4o', label: 'GPT-4o (Vision)' },
-  { value: 'anthropic/claude-3-5-sonnet-20240620', label: 'Claude 3.5 (Vision/Files)' },
-  { value: 'perplexity/llama-3.1-sonar-large-128k-online', label: 'Perplexity (Search)' },
+  { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Vision/Files)' },
+  { value: 'anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku (Vision - Cheaper)' },
+  { value: 'perplexity/sonar', label: 'Perplexity Sonar (Search)' },
+  { value: 'perplexity/sonar-pro', label: 'Perplexity Pro (Research)' },
 ];
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -1855,7 +1857,7 @@ export default function ChatInterface() {
                           toast.success(`Switched to ${visionModel.label} (supports images/files)`);
                           return;
                         } else {
-                          toast.error('Claude or OpenAI not available. Please add ANTHROPIC_API_KEY or OPENAI_API_KEY.');
+                          toast.error('Vision-capable models not available. Please add OPEN_ROUTER_KEY to use Claude or GPT-4o for image/file processing.');
                           return;
                         }
                       }
@@ -2345,7 +2347,7 @@ export default function ChatInterface() {
                   <div className="space-y-2 text-xs text-gray-400">
                     <div>• Groq: Llama 3.1 8B, Llama 3.3 70B (Fast & Cheap)</div>
                     <div>• Anthropic: Claude 3.5 Sonnet (Best Quality)</div>
-                    <div>• Kimi: Kimi K2 (moonshot-v1-128k) - Vision & Reasoning (Premium)</div>
+                    <div>• Kimi: Kimi K2 (kimi-k2-turbo-preview) - Reasoning (Premium)</div>
                     <div>• Perplexity: Sonar (Web Search)</div>
                   </div>
                 </div>

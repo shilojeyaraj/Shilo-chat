@@ -9,6 +9,8 @@ import { getCodingPrompt } from '@/lib/prompts/coding-mode';
 import { buildOptimizedContext, ConversationMessage } from '@/lib/utils/conversation-manager';
 // Quality assessment removed - OpenRouter handles model selection
 import type { ChatRequestBody, RAGChunk, FileData, ToolResult } from '@/lib/types/api';
+import { routeAgentToOptimalLLM, estimateCodingComplexity } from '@/lib/llm/agent-router';
+import { getChatAgentPrompt } from '@/lib/prompts/agent-prompts';
 
 /**
  * Enhanced system prompt based on task type and mode
@@ -36,20 +38,9 @@ function getSystemPrompt(
     return getCodingPrompt(taskType, ragContext, toolResults);
   }
 
-  // Primary mode (ChatGPT-like)
-  let basePrompt = `You are a helpful AI assistant. You have access to:
-
-- Web search (when you need current information)
-- Code execution (Python sandbox)
-- File parsing (PDFs, CSVs, images)
-- Long context memory
-- User's uploaded documents (via RAG)
-
-When users ask for current info, you automatically search the web.
-When users upload files, you automatically analyze them.
-When users need code run, you automatically execute it in a sandbox.
-
-Be conversational, helpful, and concise. Match ChatGPT's tone and quality.`;
+  // Primary mode: Use optimized chat agent prompt
+  // This will automatically use Perplexity Pro for research or Claude Sonnet 4.5 for reasoning
+  let basePrompt = getChatAgentPrompt(taskType, ragContext, toolResults, personalInfoContext, memoryContext);
 
   // Add RAG context
   if (ragContext && ragContext.length > 0) {
@@ -207,15 +198,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 4: Route to optimal model
-    const { config, taskType } = await routeRequest(messages, {
+    // Step 4: Classify task type first
+    const { taskType: classifiedTaskType } = await routeRequest(messages, {
       hasImages,
       hasCode: /```/.test(lastMessage),
       fileCount,
       userOverride,
-      mode, // Pass mode to router
-      deepWebSearch, // Pass deep web search flag
+      mode,
+      deepWebSearch,
     });
+    
+    // Step 4.5: Use agent-specific routing for chat agent
+    // This ensures we use Perplexity Pro for research or Claude Sonnet 4.5 for reasoning
+    const taskType = classifiedTaskType;
+    const codingComplexity = mode === 'coding' 
+      ? estimateCodingComplexity(lastMessage, /```/.test(lastMessage), fileCount)
+      : undefined;
+    
+    const agentConfig = routeAgentToOptimalLLM('chat', {
+      taskType,
+      hasImages,
+      hasCode: /```/.test(lastMessage),
+      fileCount,
+      deepWebSearch,
+    });
+    
+    // Use agent config, but allow user override
+    const config = userOverride ? (await routeRequest(messages, {
+      hasImages,
+      hasCode: /```/.test(lastMessage),
+      fileCount,
+      userOverride,
+      mode,
+      deepWebSearch,
+    })).config : agentConfig;
 
     // Step 5: Optimize conversation context (hot-warm-cold)
     const conversationMessages: ConversationMessage[] = messages.map((m: any) => ({
@@ -248,11 +264,25 @@ export async function POST(req: NextRequest) {
     );
 
     // Step 6: Build enhanced messages with system prompt and handle images
-    // Limit system prompt size when images are present (images take most of the token budget)
-    // Study mode database integration - to be implemented when study features are fully developed
+    // Use optimized agent prompts for better performance
     const studyProgress = mode === 'study' ? undefined : undefined;
     const errorLog = mode === 'study' ? undefined : undefined;
-    let systemPrompt = getSystemPrompt(taskType, mode, ragContext, toolResults, personalInfoContext, memoryContext, studyProgress, errorLog);
+    
+    // Use agent-specific prompts (optimized for each LLM)
+    let systemPrompt: string;
+    if (mode === 'study') {
+      // Study mode uses EELC prompts
+      const { getStudyPrompt } = require('@/lib/prompts/study-mode');
+      const technique = detectStudyTechnique(taskType);
+      systemPrompt = getStudyPrompt(taskType, technique, ragContext, studyProgress, errorLog);
+    } else if (mode === 'coding') {
+      // Coding mode uses optimized coding prompts
+      const { getCodingModePrompt } = require('@/lib/prompts/agent-prompts');
+      systemPrompt = getCodingModePrompt(taskType, ragContext, toolResults);
+    } else {
+      // Primary mode: Use optimized chat agent prompt
+      systemPrompt = getChatAgentPrompt(taskType, ragContext, toolResults, personalInfoContext, memoryContext);
+    }
     
     // Truncate system prompt if it's too large (especially with images)
     // Claude handles large images well, so we can keep more context
