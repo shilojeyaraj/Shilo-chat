@@ -163,6 +163,12 @@ export async function classifyTask(
     return 'data_analysis';
   }
 
+  // Check for study plan requests (specific pattern: "studying X, give me a study plan for Y time")
+  const studyPlanPattern = /(?:studying|study|learning|learn)\s+([^,\.]+?)(?:\.|,|;|$).*?(?:give me|create|make|generate|provide|show me).*?(?:study plan|study schedule|plan|schedule).*?(?:for|in|over|next)?\s*(\d+)\s*(?:hour|hr|minute|min|day|week|session)/i;
+  if (studyPlanPattern.test(userMessage)) {
+    return 'study';
+  }
+
   // Check for study-related queries
   const studyKeywords = [
     'study', 'learn', 'practice', 'review', 'exam', 'quiz', 'homework', 'assignment',

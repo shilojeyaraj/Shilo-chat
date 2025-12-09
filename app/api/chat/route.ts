@@ -101,14 +101,54 @@ function getSystemPrompt(
 
 /**
  * Detect study technique from task type or message content
+ * Also extracts study plan information if present
  */
-function detectStudyTechnique(taskType: string): string | undefined {
-  // Map task types to study techniques
-  if (taskType === 'study') {
-    // Default technique - can be refined based on message content
-    return undefined; // Will use default from main prompt
+function detectStudyTechnique(taskType: string, userMessage?: string): { technique?: string; isStudyPlan?: boolean; subject?: string; timeAvailable?: string } {
+  if (taskType !== 'study') {
+    return {};
   }
-  return undefined;
+
+  if (!userMessage) {
+    return {};
+  }
+
+  const messageLower = userMessage.toLowerCase();
+
+  // Detect study plan requests
+  const studyPlanPattern = /(?:studying|study|learning|learn)\s+([^,\.]+?)(?:\.|,|;|$).*?(?:give me|create|make|generate|provide|show me).*?(?:study plan|study schedule|plan|schedule).*?(?:for|in|over|next)?\s*(\d+)\s*(hour|hr|minute|min|day|week|session)/i;
+  const studyPlanMatch = userMessage.match(studyPlanPattern);
+  
+  if (studyPlanMatch) {
+    const subject = studyPlanMatch[1]?.trim();
+    const timeAmount = studyPlanMatch[2];
+    const timeUnit = studyPlanMatch[3]?.toLowerCase();
+    
+    return {
+      technique: 'study_plan',
+      isStudyPlan: true,
+      subject: subject,
+      timeAvailable: `${timeAmount} ${timeUnit}${timeAmount !== '1' ? 's' : ''}`,
+    };
+  }
+
+  // Detect other study techniques from message content
+  if (/interleav|mix.*problem|different.*type/i.test(messageLower)) {
+    return { technique: 'interleaved' };
+  }
+  if (/worked example|step.*step|show.*solution/i.test(messageLower)) {
+    return { technique: 'worked_examples' };
+  }
+  if (/explain.*simple|teach.*student|feynman/i.test(messageLower)) {
+    return { technique: 'feynman' };
+  }
+  if (/blurt|write.*everything.*know|without.*notes/i.test(messageLower)) {
+    return { technique: 'blurting' };
+  }
+  if (/pomodoro|25.*min|break/i.test(messageLower)) {
+    return { technique: 'pomodoro' };
+  }
+
+  return {};
 }
 
 export async function POST(req: NextRequest) {
@@ -273,8 +313,18 @@ export async function POST(req: NextRequest) {
     if (mode === 'study') {
       // Study mode uses EELC prompts
       const { getStudyPrompt } = require('@/lib/prompts/study-mode');
-      const technique = detectStudyTechnique(taskType);
-      systemPrompt = getStudyPrompt(taskType, technique, ragContext, studyProgress, errorLog);
+      const studyInfo = detectStudyTechnique(taskType, lastMessage);
+      const studyPlanInfo = studyInfo.isStudyPlan 
+        ? { subject: studyInfo.subject, timeAvailable: studyInfo.timeAvailable }
+        : undefined;
+      systemPrompt = getStudyPrompt(
+        taskType, 
+        studyInfo.technique, 
+        ragContext, 
+        studyProgress, 
+        errorLog,
+        studyPlanInfo
+      );
     } else if (mode === 'coding') {
       // Coding mode uses optimized coding prompts
       const { getCodingModePrompt } = require('@/lib/prompts/agent-prompts');

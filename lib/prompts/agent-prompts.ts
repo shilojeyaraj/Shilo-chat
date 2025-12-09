@@ -533,11 +533,12 @@ export function getStudyModePrompt(
   technique?: string,
   ragContext?: any[],
   studyProgress?: any,
-  errorLog?: any[]
+  errorLog?: any[],
+  studyPlanInfo?: { subject?: string; timeAvailable?: string }
 ): string {
   // Use the existing study mode prompt from study-mode.ts
   // This is a wrapper that ensures we use the optimized version
   const { getStudyPrompt } = require('./study-mode');
-  return getStudyPrompt(taskType, technique, ragContext, studyProgress, errorLog);
+  return getStudyPrompt(taskType, technique, ragContext, studyProgress, errorLog, studyPlanInfo);
 }
 
