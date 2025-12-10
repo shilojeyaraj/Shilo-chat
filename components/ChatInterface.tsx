@@ -1509,7 +1509,7 @@ export default function ChatInterface() {
         <div 
           ref={messagesContainerRef}
           onScroll={throttledCheckIfAtBottom}
-          className="flex-1 overflow-y-auto px-6 pt-6 pb-4 space-y-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 relative smooth-scroll"
+          className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-6 pb-4 space-y-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 relative smooth-scroll"
           style={{
             scrollBehavior: 'smooth',
             WebkitOverflowScrolling: 'touch',
@@ -1562,7 +1562,7 @@ export default function ChatInterface() {
           {/* Tool Execution Indicator */}
           {executingTools.length > 0 && (
             <div className="flex justify-start animate-in fade-in slide-in-from-bottom-4">
-              <div className="max-w-2xl w-full">
+              <div className="max-w-2xl w-full min-w-0">
                 <div className="rounded-2xl px-5 py-4 bg-slate-800/60 backdrop-blur-sm border border-indigo-500/30 shadow-lg">
                   <div className="flex items-center gap-3">
                     <Loader2 className="w-5 h-5 text-indigo-400 animate-spin flex-shrink-0" />
@@ -1594,7 +1594,7 @@ export default function ChatInterface() {
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group message-enter`}
               style={{ animationDelay: `${msgIndex * 50}ms` }}
             >
-              <div className="max-w-2xl relative w-fit">
+              <div className="max-w-2xl w-full min-w-0">
                 {editingMessageId === message.id && message.role === 'user' ? (
                   <div className="rounded-2xl px-5 py-4 shadow-lg bg-slate-800/90 backdrop-blur-sm border border-indigo-500/50">
                     <textarea
@@ -1660,12 +1660,12 @@ export default function ChatInterface() {
                   </div>
                 ) : (
                 <div
-                  className={`rounded-2xl px-5 py-4 shadow-xl transition-all duration-200 break-words overflow-wrap-anywhere hover:shadow-2xl ${
+                  className={`rounded-2xl px-5 py-4 shadow-xl transition-all duration-200 break-words overflow-wrap-anywhere hover:shadow-2xl min-w-0 ${
                     message.role === 'user'
                       ? 'bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-indigo-500/20'
                       : 'bg-slate-800/80 backdrop-blur-sm text-slate-100 border border-slate-700/50 shadow-slate-900/50'
                   }`}
-                  style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
+                  style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}
                 >
                   {/* Display images */}
                   {message.images && message.images.length > 0 && (

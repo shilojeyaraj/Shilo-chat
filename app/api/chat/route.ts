@@ -521,23 +521,102 @@ export async function POST(req: NextRequest) {
             );
           }
           
-          for await (const chunk of finalProvider.streamCall(enhancedMessages, {
-            model: finalConfig.model,
-            temperature: finalConfig.temperature,
-            maxTokens: finalConfig.maxTokens,
-            stream: true,
-          })) {
-            // Check if chunk contains usage data (some providers send it)
-            if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
-              usageData = (chunk as any).usage;
-              continue; // Skip usage data chunks, they're not content
+          // Try to stream with the primary provider, with automatic fallback for token limit errors
+          let streamSuccess = false;
+          let fallbackConfig = finalConfig;
+          let fallbackProvider = finalProvider;
+          
+          try {
+            for await (const chunk of finalProvider.streamCall(enhancedMessages, {
+              model: finalConfig.model,
+              temperature: finalConfig.temperature,
+              maxTokens: finalConfig.maxTokens,
+              stream: true,
+            })) {
+              streamSuccess = true;
+              // Check if chunk contains usage data (some providers send it)
+              if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
+                usageData = (chunk as any).usage;
+                continue; // Skip usage data chunks, they're not content
+              }
+              
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
+                )
+              );
             }
+          } catch (error: any) {
+            // Check if it's a token limit error (413 or "request too large")
+            const isTokenLimitError = error?.isTokenLimitError || 
+              error?.statusCode === 413 ||
+              (error?.message && (
+                error.message.toLowerCase().includes('request too large') ||
+                error.message.toLowerCase().includes('tokens per minute') ||
+                error.message.toLowerCase().includes('tpm') ||
+                error.message.toLowerCase().includes('413')
+              ));
             
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
-              )
-            );
+            if (isTokenLimitError && !streamSuccess) {
+              // Automatically switch to a model with higher token limits
+              // Use OpenRouter with Claude or GPT-4o which have much higher limits
+              const available = getAvailableProviders();
+              
+              if (available.openrouter) {
+                // Switch to Claude Sonnet via OpenRouter (200K context, higher TPM limits)
+                fallbackConfig = {
+                  provider: 'openrouter',
+                  model: 'anthropic/claude-3.5-sonnet',
+                  maxTokens: finalConfig.maxTokens,
+                  temperature: finalConfig.temperature,
+                  costPer1M: 3, // Claude Sonnet pricing
+                };
+                fallbackProvider = providers.openrouter;
+                
+                // Update metadata to show fallback
+                const fallbackMetadata = {
+                  type: 'metadata',
+                  taskType,
+                  model: fallbackConfig.model,
+                  provider: fallbackConfig.provider,
+                  providerName: 'Claude 3.5 Sonnet (via OpenRouter)',
+                  toolsUsed: requiredTools,
+                  costPer1M: fallbackConfig.costPer1M,
+                  usedFallback: true,
+                  fallbackReason: 'Request too large for Groq - switched to Claude for higher token limits',
+                };
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(fallbackMetadata)}\n\n`)
+                );
+                
+                // Retry with fallback model
+                for await (const chunk of fallbackProvider.streamCall(enhancedMessages, {
+                  model: fallbackConfig.model,
+                  temperature: fallbackConfig.temperature,
+                  maxTokens: fallbackConfig.maxTokens,
+                  stream: true,
+                })) {
+                  // Check if chunk contains usage data
+                  if (chunk && typeof chunk === 'object' && 'usage' in chunk) {
+                    usageData = (chunk as any).usage;
+                    continue;
+                  }
+                  
+                  controller.enqueue(
+                    encoder.encode(
+                      `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
+                    )
+                  );
+                }
+                streamSuccess = true;
+              } else {
+                // If OpenRouter not available, throw the original error
+                throw error;
+              }
+            } else {
+              // Not a token limit error, throw it
+              throw error;
+            }
           }
 
           // Send usage data if available

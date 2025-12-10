@@ -56,7 +56,7 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
   }, [content]);
 
   return (
-    <div className="message-content prose prose-invert max-w-none break-words overflow-wrap-anywhere" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+    <div className="message-content prose prose-invert max-w-none break-words overflow-wrap-anywhere min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
@@ -87,7 +87,7 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
             const shouldShowCollapse = lines > 20;
 
             return (
-              <div className="my-4 rounded-lg overflow-hidden border border-gray-700 bg-gray-900">
+              <div className="my-4 rounded-lg overflow-hidden border border-gray-700 bg-gray-900 max-w-full">
                 {/* Code block header */}
                 <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
                   <div className="flex items-center gap-2">
@@ -130,7 +130,7 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
                 </div>
                 {/* Code content */}
                 {!isCollapsed && (
-                  <div className="relative">
+                  <div className="relative overflow-x-auto">
                     <SyntaxHighlighter
                       language={language}
                       style={isCodingMode ? vscDarkPlus : oneDark}
@@ -140,6 +140,7 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
                         background: '#1a1a1a',
                         fontSize: '0.875rem',
                         lineHeight: '1.5',
+                        maxWidth: '100%',
                       }}
                       showLineNumbers={lines > 10}
                       lineNumberStyle={{

@@ -73,7 +73,17 @@ const groqProvider: LLMProvider = {
       } catch {
         errorMessage = errorText || response.statusText;
       }
-      throw new Error(`Groq API error (${response.status}): ${errorMessage}`);
+      
+      // Check if it's a 413 (Request too large) or token limit error
+      const isTokenLimitError = response.status === 413 || 
+        errorMessage.toLowerCase().includes('request too large') ||
+        errorMessage.toLowerCase().includes('tokens per minute') ||
+        errorMessage.toLowerCase().includes('tpm');
+      
+      const error = new Error(`Groq API error (${response.status}): ${errorMessage}`);
+      (error as any).isTokenLimitError = isTokenLimitError;
+      (error as any).statusCode = response.status;
+      throw error;
     }
 
     const data = await response.json();
@@ -142,7 +152,17 @@ const groqProvider: LLMProvider = {
       } catch {
         errorMessage = errorText || response.statusText;
       }
-      throw new Error(`Groq API error (${response.status}): ${errorMessage}`);
+      
+      // Check if it's a 413 (Request too large) or token limit error
+      const isTokenLimitError = response.status === 413 || 
+        errorMessage.toLowerCase().includes('request too large') ||
+        errorMessage.toLowerCase().includes('tokens per minute') ||
+        errorMessage.toLowerCase().includes('tpm');
+      
+      const error = new Error(`Groq API error (${response.status}): ${errorMessage}`);
+      (error as any).isTokenLimitError = isTokenLimitError;
+      (error as any).statusCode = response.status;
+      throw error;
     }
 
     const reader = response.body?.getReader();
