@@ -129,6 +129,7 @@ export default function ChatInterface() {
   const [useRAG, setUseRAG] = useState(true);
   const [userOverride, setUserOverride] = useState('');
   const [activeTools, setActiveTools] = useState<string[]>([]);
+  const [executingTools, setExecutingTools] = useState<string[]>([]);
   const [modelOptions, setModelOptions] = useState(DEFAULT_MODEL_OPTIONS);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -735,6 +736,7 @@ export default function ChatInterface() {
     setAttachedFiles([]);
     setIsLoading(true);
     setActiveTools([]);
+    setExecutingTools([]);
 
     try {
       // Compress images before sending to reduce token usage
@@ -887,6 +889,17 @@ export default function ChatInterface() {
               try {
                 const parsed = JSON.parse(data);
 
+                if (parsed.type === 'tool_execution') {
+                  // Handle tool execution status
+                  if (parsed.status === 'executing') {
+                    setExecutingTools(parsed.tools || []);
+                  } else if (parsed.status === 'complete') {
+                    // Keep tools visible briefly, then clear when response starts
+                    setTimeout(() => setExecutingTools([]), 500);
+                  }
+                  continue;
+                }
+
                 if (parsed.type === 'metadata') {
                   // Update message with metadata
                   assistantMessage.metadata = {
@@ -900,6 +913,7 @@ export default function ChatInterface() {
                     fallbackReason: parsed.fallbackReason,
                   };
                   setActiveTools(parsed.toolsUsed || []);
+                  setExecutingTools([]); // Clear executing tools when response starts
 
                   // Show notification if fallback was used
                   if (parsed.usedFallback && parsed.fallbackReason) {
@@ -1090,8 +1104,10 @@ export default function ChatInterface() {
         return <Code className="w-4 h-4" />;
       case 'fetch_webpage':
         return <Globe className="w-4 h-4" />;
+      case 'update_personal_info':
+        return <User className="w-4 h-4" />;
       default:
-        return null;
+        return <Zap className="w-4 h-4" />;
     }
   };
 
@@ -1103,6 +1119,7 @@ export default function ChatInterface() {
       analyze_csv: 'Analyzing CSV',
       code_interpreter: 'Running code',
       fetch_webpage: 'Fetching webpage',
+      update_personal_info: 'Updating personal info',
     };
     return labels[toolName] || toolName;
   };
@@ -1538,6 +1555,35 @@ export default function ChatInterface() {
                     <p className="animate-in fade-in" style={{ animationDelay: '400ms' }}>• Best practices and design patterns</p>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Tool Execution Indicator */}
+          {executingTools.length > 0 && (
+            <div className="flex justify-start animate-in fade-in slide-in-from-bottom-4">
+              <div className="max-w-2xl w-full">
+                <div className="rounded-2xl px-5 py-4 bg-slate-800/60 backdrop-blur-sm border border-indigo-500/30 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-indigo-400 animate-spin flex-shrink-0" />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-slate-200 mb-2">
+                        Executing tools...
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {executingTools.map((tool, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 border border-indigo-500/30 rounded-lg text-xs text-indigo-300"
+                          >
+                            {getToolIcon(tool)}
+                            <span>{getToolLabel(tool)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}

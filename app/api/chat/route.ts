@@ -475,6 +475,21 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          const encoder = new TextEncoder();
+          
+          // Send tool execution info immediately if tools are being used
+          // This allows the UI to show tool execution indicators before the response
+          if (requiredTools.length > 0) {
+            const toolExecutionInfo = {
+              type: 'tool_execution',
+              tools: requiredTools,
+              status: 'executing',
+            };
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(toolExecutionInfo)}\n\n`)
+            );
+          }
+          
           // Send metadata first
           const metadata = {
             type: 'metadata',
@@ -488,11 +503,23 @@ export async function POST(req: NextRequest) {
             fallbackReason: undefined,
           };
           controller.enqueue(
-            new TextEncoder().encode(`data: ${JSON.stringify(metadata)}\n\n`)
+            encoder.encode(`data: ${JSON.stringify(metadata)}\n\n`)
           );
 
           // Stream the response from OpenRouter
           let usageData: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null = null;
+          
+          // Send tool execution completion when response starts
+          if (requiredTools.length > 0) {
+            const toolExecutionComplete = {
+              type: 'tool_execution',
+              tools: requiredTools,
+              status: 'complete',
+            };
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(toolExecutionComplete)}\n\n`)
+            );
+          }
           
           for await (const chunk of finalProvider.streamCall(enhancedMessages, {
             model: finalConfig.model,
@@ -507,7 +534,7 @@ export async function POST(req: NextRequest) {
             }
             
             controller.enqueue(
-              new TextEncoder().encode(
+              encoder.encode(
                 `data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`
               )
             );
@@ -516,13 +543,13 @@ export async function POST(req: NextRequest) {
           // Send usage data if available
           if (usageData) {
             controller.enqueue(
-              new TextEncoder().encode(
+              encoder.encode(
                 `data: ${JSON.stringify({ type: 'usage', usage: usageData })}\n\n`
               )
             );
           }
 
-          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
         } catch (error: any) {
           // Streaming error handled
