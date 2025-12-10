@@ -718,6 +718,15 @@ export default function ChatInterface() {
 
     setMessages((prev) => [...prev, userMessage]);
     
+    // Immediately scroll to bottom when user sends a message
+    // This ensures the user sees their message even if they were scrolled up
+    setTimeout(() => {
+      scrollToBottom(true);
+      setIsAtBottom(true);
+      setShowScrollButton(false);
+      shouldAutoScrollRef.current = true; // Enable auto-scroll for the response
+    }, 100);
+    
     // Save user message
     await saveMessage(convId, userMessage);
     
@@ -870,6 +879,15 @@ export default function ChatInterface() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      
+      // Ensure we're at the bottom when assistant message starts
+      // This handles the case where user sent a message while scrolled up
+      setTimeout(() => {
+        scrollToBottom(true);
+        setIsAtBottom(true);
+        setShowScrollButton(false);
+        shouldAutoScrollRef.current = true; // Enable auto-scroll during streaming
+      }, 100);
 
       if (reader) {
         let buffer = '';
