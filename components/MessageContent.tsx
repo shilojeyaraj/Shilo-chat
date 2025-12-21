@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -16,12 +16,12 @@ interface MessageContentProps {
   isCodingMode?: boolean;
 }
 
-export default function MessageContent({ content, isCodingMode = false }: MessageContentProps) {
+function MessageContent({ content, isCodingMode = false }: MessageContentProps) {
   const [copiedCodeBlocks, setCopiedCodeBlocks] = useState<Set<number>>(new Set());
   const [collapsedCodeBlocks, setCollapsedCodeBlocks] = useState<Set<number>>(new Set());
   const codeBlockRef = useRef(0);
 
-  const handleCopyCode = async (code: string, index: number) => {
+  const handleCopyCode = useCallback(async (code: string, index: number) => {
     try {
       const normalizedCode = normalizeForClipboard(code);
       await navigator.clipboard.writeText(normalizedCode);
@@ -36,9 +36,9 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
     } catch (err) {
       // Failed to copy code - silently fail
     }
-  };
+  }, []);
 
-  const toggleCodeBlock = (index: number) => {
+  const toggleCodeBlock = useCallback((index: number) => {
     setCollapsedCodeBlocks((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(index)) {
@@ -48,25 +48,22 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
       }
       return newSet;
     });
-  };
+  }, []);
 
   // Reset code block index for each render
   useEffect(() => {
     codeBlockRef.current = 0;
   }, [content]);
 
-  return (
-    <div className="message-content prose prose-invert max-w-none break-words overflow-wrap-anywhere min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-        components={{
+  // Memoize markdown components - only recreate when state changes
+  const markdownComponents = useMemo(() => ({
           // Code blocks with syntax highlighting
           code({ node, inline, className, children, ...props }: any) {
             const match = /language-(\w+)/.exec(className || '');
             const language = match ? match[1] : '';
             const codeString = String(children).replace(/\n$/, '');
             const currentIndex = codeBlockRef.current++;
+            // Access state directly in closure - will be current when called
             const isCollapsed = collapsedCodeBlocks.has(currentIndex);
             const isCopied = copiedCodeBlocks.has(currentIndex);
 
@@ -159,27 +156,27 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
             );
           },
           // Headings
-          h1: ({ children }) => (
+          h1: ({ children }: any) => (
             <h1 className="text-2xl font-bold mt-6 mb-4 text-white">{children}</h1>
           ),
-          h2: ({ children }) => (
+          h2: ({ children }: any) => (
             <h2 className="text-xl font-bold mt-5 mb-3 text-white">{children}</h2>
           ),
-          h3: ({ children }) => (
+          h3: ({ children }: any) => (
             <h3 className="text-lg font-semibold mt-4 mb-2 text-white">{children}</h3>
           ),
           // Lists
-          ul: ({ children }) => (
+          ul: ({ children }: any) => (
             <ul className="list-disc list-inside my-3 space-y-1 text-gray-300">{children}</ul>
           ),
-          ol: ({ children }) => (
+          ol: ({ children }: any) => (
             <ol className="list-decimal list-inside my-3 space-y-1 text-gray-300">{children}</ol>
           ),
-          li: ({ children }) => <li className="ml-4">{children}</li>,
+          li: ({ children }: any) => <li className="ml-4">{children}</li>,
           // Paragraphs
-          p: ({ children }) => <p className="my-2 text-gray-300 leading-relaxed">{children}</p>,
+          p: ({ children }: any) => <p className="my-2 text-gray-300 leading-relaxed">{children}</p>,
           // Links
-          a: ({ href, children }) => (
+          a: ({ href, children }: any) => (
             <a
               href={href}
               target="_blank"
@@ -190,47 +187,57 @@ export default function MessageContent({ content, isCodingMode = false }: Messag
             </a>
           ),
           // Blockquotes
-          blockquote: ({ children }) => (
+          blockquote: ({ children }: any) => (
             <blockquote className="border-l-4 border-gray-600 pl-4 my-4 italic text-gray-400">
               {children}
             </blockquote>
           ),
           // Tables
-          table: ({ children }) => (
+          table: ({ children }: any) => (
             <div className="overflow-x-auto my-4">
               <table className="min-w-full border-collapse border border-gray-700">
                 {children}
               </table>
             </div>
           ),
-          thead: ({ children }) => (
+          thead: ({ children }: any) => (
             <thead className="bg-gray-800">{children}</thead>
           ),
-          tbody: ({ children }) => <tbody>{children}</tbody>,
-          tr: ({ children }) => (
+          tbody: ({ children }: any) => <tbody>{children}</tbody>,
+          tr: ({ children }: any) => (
             <tr className="border-b border-gray-700">{children}</tr>
           ),
-          th: ({ children }) => (
+          th: ({ children }: any) => (
             <th className="px-4 py-2 text-left font-semibold text-gray-300 border border-gray-700">
               {children}
             </th>
           ),
-          td: ({ children }) => (
+          td: ({ children }: any) => (
             <td className="px-4 py-2 text-gray-300 border border-gray-700">{children}</td>
           ),
           // Horizontal rule
           hr: () => <hr className="my-6 border-gray-700" />,
           // Strong/Bold
-          strong: ({ children }) => (
+          strong: ({ children }: any) => (
             <strong className="font-semibold text-white">{children}</strong>
           ),
           // Emphasis/Italic
-          em: ({ children }) => <em className="italic text-gray-300">{children}</em>,
-        }}
+          em: ({ children }: any) => <em className="italic text-gray-300">{children}</em>,
+  }), [handleCopyCode, toggleCodeBlock, isCodingMode]); // Note: collapsedCodeBlocks/copiedCodeBlocks accessed via closure
+
+  return (
+    <div className="message-content prose prose-invert max-w-none break-words overflow-wrap-anywhere min-w-0" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere', maxWidth: '100%' }}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
+        components={markdownComponents}
       >
         {content}
       </ReactMarkdown>
     </div>
   );
 }
+
+// Memoize component to prevent unnecessary re-renders
+export default React.memo(MessageContent);
 

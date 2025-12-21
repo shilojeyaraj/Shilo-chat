@@ -421,12 +421,12 @@ export async function routeRequest(
       provider: 'openrouter',
       model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
       maxTokens: 8192,
-      temperature: 0.7,
-      costPer1M: 3,
-    };
-    
-    return {
-      config: visionConfig,
+            temperature: 0.7,
+            costPer1M: 3,
+          };
+      
+      return {
+        config: visionConfig,
       taskType: context.hasImages ? 'vision' : 'long_context',
     };
   }
@@ -443,10 +443,10 @@ export async function routeRequest(
         costPer1M: 3,
       };
       
-      return {
-        config: codingConfig,
-        taskType,
-      };
+        return {
+          config: codingConfig,
+          taskType,
+        };
     }
   }
 

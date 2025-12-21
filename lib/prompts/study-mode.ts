@@ -116,13 +116,14 @@ When a study session is planned:
 
 ## Your Action Protocol (Always Follow This Workflow)
 
-### STEP 1: ASK
-Always start by asking: "Which subject are we focusing on today?" or "What topic would you like to study?"
+### STEP 1: IDENTIFY (AUTOMATIC)
+When a topic is detected in the user's message, you should IMMEDIATELY identify the subject and determine the optimal study method. Do NOT ask "Which subject are we focusing on today?" if the topic is already clear from the message.
 
-### STEP 2: IDENTIFY
+### STEP 2: DETERMINE STUDY MODE
 The subject dictates the primary Study Mode:
 - Math/Physics/Stats/Engineering Problems → Problem-Solving Mode
 - Bio-Chem/Theory/Concepts → Concept Mastery Mode
+- Programming/Coding → Mixed Mode (Worked Examples → Modify → Create)
 - Planning a session → Study Session Planning Mode
 
 ### STEP 3: PRIORITIZE
@@ -321,14 +322,39 @@ export function getStudyPrompt(
   ragContext?: any[],
   studyProgress?: any,
   errorLog?: any[],
-  studyPlanInfo?: { subject?: string; timeAvailable?: string }
+  studyPlanInfo?: { 
+    subject?: string; 
+    timeAvailable?: string;
+    subjectInfo?: any;
+    autoGenerateInstructions?: boolean;
+  }
 ): string {
-  // If this is a study plan request, use specialized prompt
-  if (technique === 'study_plan' && studyPlanInfo) {
-    return getStudyPlanPrompt(studyPlanInfo.subject, studyPlanInfo.timeAvailable, ragContext);
+  // If this is a study plan request or auto-generate is enabled, use specialized prompt
+  if ((technique === 'study_plan' || studyPlanInfo?.autoGenerateInstructions) && studyPlanInfo) {
+    return getStudyPlanPrompt(
+      studyPlanInfo.subject, 
+      studyPlanInfo.timeAvailable, 
+      ragContext,
+      studyPlanInfo.subjectInfo
+    );
   }
 
   let prompt = STUDY_MODE_PROMPTS.main;
+
+  // If subject info is provided but no study plan was generated, add instructions to provide one
+  if (studyPlanInfo?.subject && studyPlanInfo?.subjectInfo && !studyPlanInfo?.timeAvailable) {
+    const subjectInfo = studyPlanInfo.subjectInfo;
+    prompt += `\n\n## AUTOMATIC TOPIC DETECTION\n\n`;
+    prompt += `The user has mentioned studying "${studyPlanInfo.subject}". `;
+    prompt += `Based on cognitive science research, the optimal study method for this topic is: **${subjectInfo.primaryMethod}**.\n\n`;
+    prompt += `**IMMEDIATELY provide study instructions** without asking for more information. Include:\n`;
+    prompt += `1. Why ${subjectInfo.primaryMethod} is optimal for ${studyPlanInfo.subject}\n`;
+    prompt += `2. Specific step-by-step instructions for using this method\n`;
+    prompt += `3. Recommended time blocks (${subjectInfo.recommendedTimeBlocks} minutes)\n`;
+    prompt += `4. Secondary techniques to combine: ${subjectInfo.secondaryMethods?.join(', ') || 'N/A'}\n`;
+    prompt += `5. What to focus on first\n\n`;
+    prompt += `Do NOT ask "Which subject are we focusing on?" - the subject is already identified as "${studyPlanInfo.subject}".\n`;
+  }
 
   // Add technique-specific prompt
   if (technique) {
@@ -409,16 +435,44 @@ ${errorLog.slice(0, 5).map((error, idx) =>
 function getStudyPlanPrompt(
   subject?: string,
   timeAvailable?: string,
-  ragContext?: any[]
+  ragContext?: any[],
+  subjectInfo?: any
 ): string {
   const subjectName = subject || 'the subject';
   const timeFrame = timeAvailable || 'the available time';
+  
+  // Build subject-specific context
+  let subjectContext = '';
+  if (subjectInfo) {
+    const methodExplanation = {
+      'interleaved': 'Interleaved Practice - mixing problem types from different chapters (optimal for quantitative subjects)',
+      'feynman': 'Feynman Technique - explaining concepts simply (optimal for conceptual subjects)',
+      'worked_examples': 'Worked Examples → Modify → Create (optimal for programming and complex problem-solving)',
+      'active_recall': 'Active Recall - retrieving information from memory (optimal for general learning)',
+      'blurting': 'Blurting Technique - writing everything you know without notes (optimal for theory-heavy subjects)'
+    };
+    
+    subjectContext = `\n\n## DETECTED SUBJECT INFORMATION\n\n`;
+    subjectContext += `**Topic**: ${subjectName}\n`;
+    subjectContext += `**Category**: ${subjectInfo.category}\n`;
+    subjectContext += `**Recommended Primary Method**: ${subjectInfo.primaryMethod} - ${methodExplanation[subjectInfo.primaryMethod as keyof typeof methodExplanation] || 'Optimal for this subject type'}\n`;
+    subjectContext += `**Secondary Methods**: ${subjectInfo.secondaryMethods?.join(', ') || 'N/A'}\n`;
+    subjectContext += `**Recommended Time Blocks**: ${subjectInfo.recommendedTimeBlocks} minutes\n`;
+    subjectContext += `**Study Mode**: ${subjectInfo.studyMode}\n`;
+    subjectContext += `\n**IMPORTANT**: Use the recommended primary method (${subjectInfo.primaryMethod}) as the foundation of the study plan. This method has been automatically selected as optimal for ${subjectName} based on cognitive science research.\n`;
+  }
 
   return `You are the Elite Engineering Learning Coach (EELC), and you're creating a personalized, optimized study plan. The user is studying ${subjectName} and has ${timeFrame} available.
-
+${subjectContext}
 ## Your Mission
 
 Create a study plan that maximizes learning efficiency using evidence-based cognitive science principles. This isn't just a schedule—it's a strategic learning roadmap tailored to the subject matter.
+
+**CRITICAL**: When the user first sends a topic, you should IMMEDIATELY provide a complete study plan with specific instructions. Do NOT ask "Which subject are we focusing on today?" - the subject has already been detected as "${subjectName}". Instead, immediately provide:
+1. A clear overview of the optimal study method for this topic
+2. Specific step-by-step study instructions
+3. Time allocation if time was specified
+4. What techniques to use and why they're optimal for this subject
 
 ## Subject-Specific Strategy Selection
 

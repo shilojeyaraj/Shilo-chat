@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, startTransition } from 'react';
 import { Send, Loader2, FileText, X, Search, Code, Zap, Brain, Sparkles, TrendingUp, Globe, MessageSquare, Plus, Menu, Settings, Image as ImageIcon, Copy, Trash2, RefreshCw, Download, Paperclip, User, Edit2, DollarSign, Calendar, ChevronDown, CheckSquare, Square, ArrowDown, AlertTriangle, BookOpen } from 'lucide-react';
 import MessageContent from './MessageContent';
 import toast from 'react-hot-toast';
@@ -250,35 +250,37 @@ export default function ChatInterface() {
   }, []);
 
   // Smart auto-scroll: Only scroll if user was at bottom when message started
-  // This prevents forcing scroll to bottom when a new message begins (like Claude)
+  // Optimized to only run when message count changes, not on every message content update
   useEffect(() => {
     const messageCount = messages.length;
     const lastCount = lastMessageCountRef.current;
     
-    // Detect if a new message was just added
-    if (messageCount > lastCount) {
-      // Check if user is at bottom when new message starts
-      const container = messagesContainerRef.current;
-      if (container) {
-        const threshold = 100;
-        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-        // Only enable auto-scroll if user was at bottom when message started
-        shouldAutoScrollRef.current = isNearBottom;
-      }
-      lastMessageCountRef.current = messageCount;
-    }
+    // Only process if message count actually changed (new message added)
+    if (messageCount === lastCount) return;
     
-    // Only auto-scroll during streaming if we should (user was at bottom when message started)
-    // AND user is still at bottom (hasn't scrolled up)
-    if (shouldAutoScrollRef.current && isAtBottom && messages.length > 0) {
-      // Use requestAnimationFrame for smoother scrolling
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollToBottom(true);
-        });
-      });
+    // Check if user is at bottom when new message starts
+    const container = messagesContainerRef.current;
+    if (container) {
+      const threshold = 100;
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+      shouldAutoScrollRef.current = isNearBottom;
     }
-  }, [messages, isAtBottom, scrollToBottom]);
+    lastMessageCountRef.current = messageCount;
+  }, [messages.length]); // Only depend on length, not entire messages array
+
+  // Separate effect for auto-scrolling during streaming (runs less frequently)
+  useEffect(() => {
+    if (!shouldAutoScrollRef.current || !isAtBottom || messages.length === 0) return;
+    
+    // Debounce scroll to avoid excessive calls
+    const timeoutId = setTimeout(() => {
+      if (shouldAutoScrollRef.current && isAtBottom) {
+        scrollToBottom(true);
+      }
+    }, 50); // Small delay to batch scroll updates
+    
+    return () => clearTimeout(timeoutId);
+  }, [messages.length, isAtBottom, scrollToBottom]); // Only trigger on message count change
 
   // Load budget from localStorage
   useEffect(() => {
@@ -716,16 +718,19 @@ export default function ChatInterface() {
       images: selectedImages.length > 0 ? selectedImages : undefined,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    // Use startTransition for non-urgent UI updates
+    startTransition(() => {
+      setMessages((prev) => [...prev, userMessage]);
+    });
     
     // Immediately scroll to bottom when user sends a message
     // This ensures the user sees their message even if they were scrolled up
-    setTimeout(() => {
+    requestAnimationFrame(() => {
       scrollToBottom(true);
       setIsAtBottom(true);
       setShowScrollButton(false);
       shouldAutoScrollRef.current = true; // Enable auto-scroll for the response
-    }, 100);
+    });
     
     // Save user message
     await saveMessage(convId, userMessage);
@@ -878,22 +883,47 @@ export default function ChatInterface() {
         timestamp: Date.now(),
       };
 
-      setMessages((prev) => [...prev, assistantMessage]);
+      // Use startTransition for non-urgent UI updates
+      startTransition(() => {
+        setMessages((prev) => [...prev, assistantMessage]);
+      });
       
       // Ensure we're at the bottom when assistant message starts
       // This handles the case where user sent a message while scrolled up
-      setTimeout(() => {
+      requestAnimationFrame(() => {
         scrollToBottom(true);
         setIsAtBottom(true);
         setShowScrollButton(false);
         shouldAutoScrollRef.current = true; // Enable auto-scroll during streaming
-      }, 100);
+      });
 
       if (reader) {
         let buffer = '';
+        let contentBuffer = ''; // Buffer content updates to batch them
+        let updateScheduled = false;
+        
+        // Batched update function
+        const flushContentUpdate = () => {
+          if (contentBuffer) {
+            assistantMessage.content += contentBuffer;
+            contentBuffer = '';
+            startTransition(() => {
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { ...assistantMessage };
+                return updated;
+              });
+            });
+          }
+          updateScheduled = false;
+        };
+        
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            flushContentUpdate(); // Flush any remaining content
+            break;
+          }
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
@@ -941,29 +971,37 @@ export default function ChatInterface() {
                   }
 
                   // Update UI
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = { ...assistantMessage };
-                    return updated;
+                  startTransition(() => {
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      updated[updated.length - 1] = { ...assistantMessage };
+                      return updated;
+                    });
                   });
                 } else if (parsed.type === 'error') {
                   // Handle error from stream
                   assistantMessage.content = `❌ Error: ${parsed.error}`;
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = { ...assistantMessage };
-                    return updated;
+                  startTransition(() => {
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      updated[updated.length - 1] = { ...assistantMessage };
+                      return updated;
+                    });
                   });
                   setIsLoading(false);
                   shouldAutoScrollRef.current = false;
                   break;
                 } else if (parsed.type === 'content') {
-                  assistantMessage.content += parsed.content;
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = { ...assistantMessage };
-                    return updated;
-                  });
+                  // Buffer content updates and batch them
+                  contentBuffer += parsed.content;
+                  
+                  // Schedule update if not already scheduled (throttle to ~60fps)
+                  if (!updateScheduled) {
+                    updateScheduled = true;
+                    requestAnimationFrame(() => {
+                      flushContentUpdate();
+                    });
+                  }
                 } else if (parsed.type === 'usage' && parsed.usage) {
                   // Store actual usage data if provided by API
                   assistantMessage.metadata = {

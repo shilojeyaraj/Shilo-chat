@@ -102,8 +102,16 @@ function getSystemPrompt(
 /**
  * Detect study technique from task type or message content
  * Also extracts study plan information if present
+ * Now automatically detects topics and generates study instructions
  */
-function detectStudyTechnique(taskType: string, userMessage?: string): { technique?: string; isStudyPlan?: boolean; subject?: string; timeAvailable?: string } {
+function detectStudyTechnique(taskType: string, userMessage?: string): { 
+  technique?: string; 
+  isStudyPlan?: boolean; 
+  subject?: string; 
+  timeAvailable?: string;
+  subjectInfo?: any;
+  autoGenerateInstructions?: boolean;
+} {
   if (taskType !== 'study') {
     return {};
   }
@@ -114,7 +122,10 @@ function detectStudyTechnique(taskType: string, userMessage?: string): { techniq
 
   const messageLower = userMessage.toLowerCase();
 
-  // Detect study plan requests
+  // Import subject classification utilities
+  const { extractTopic, extractTime, classifySubject } = require('@/lib/utils/subject-classifier');
+
+  // First, check for explicit study plan requests
   const studyPlanPattern = /(?:studying|study|learning|learn)\s+([^,\.]+?)(?:\.|,|;|$).*?(?:give me|create|make|generate|provide|show me).*?(?:study plan|study schedule|plan|schedule).*?(?:for|in|over|next)?\s*(\d+)\s*(hour|hr|minute|min|day|week|session)/i;
   const studyPlanMatch = userMessage.match(studyPlanPattern);
   
@@ -122,16 +133,47 @@ function detectStudyTechnique(taskType: string, userMessage?: string): { techniq
     const subject = studyPlanMatch[1]?.trim();
     const timeAmount = studyPlanMatch[2];
     const timeUnit = studyPlanMatch[3]?.toLowerCase();
+    const subjectInfo = classifySubject(subject);
     
     return {
       technique: 'study_plan',
       isStudyPlan: true,
       subject: subject,
       timeAvailable: `${timeAmount} ${timeUnit}${timeAmount !== '1' ? 's' : ''}`,
+      subjectInfo: subjectInfo,
     };
   }
 
-  // Detect other study techniques from message content
+  // Auto-detect topic and time from any study message
+  const extractedTopic = extractTopic(userMessage);
+  const extractedTime = extractTime(userMessage);
+  
+  // If we found a topic, automatically generate study instructions
+  if (extractedTopic) {
+    const subjectInfo = classifySubject(extractedTopic);
+    
+    // If time is also specified, create a study plan
+    if (extractedTime) {
+      return {
+        technique: 'study_plan',
+        isStudyPlan: true,
+        subject: extractedTopic,
+        timeAvailable: extractedTime,
+        subjectInfo: subjectInfo,
+        autoGenerateInstructions: true,
+      };
+    }
+    
+    // If no time specified, still auto-generate instructions but use the primary method
+    return {
+      technique: subjectInfo.primaryMethod,
+      subject: extractedTopic,
+      subjectInfo: subjectInfo,
+      autoGenerateInstructions: true,
+    };
+  }
+
+  // Detect other study techniques from message content (explicit requests)
   if (/interleav|mix.*problem|different.*type/i.test(messageLower)) {
     return { technique: 'interleaved' };
   }
@@ -315,7 +357,18 @@ export async function POST(req: NextRequest) {
       const { getStudyPrompt } = require('@/lib/prompts/study-mode');
       const studyInfo = detectStudyTechnique(taskType, lastMessage);
       const studyPlanInfo = studyInfo.isStudyPlan 
-        ? { subject: studyInfo.subject, timeAvailable: studyInfo.timeAvailable }
+        ? { 
+            subject: studyInfo.subject, 
+            timeAvailable: studyInfo.timeAvailable,
+            subjectInfo: studyInfo.subjectInfo,
+            autoGenerateInstructions: studyInfo.autoGenerateInstructions
+          }
+        : studyInfo.autoGenerateInstructions && studyInfo.subject
+        ? {
+            subject: studyInfo.subject,
+            subjectInfo: studyInfo.subjectInfo,
+            autoGenerateInstructions: true
+          }
         : undefined;
       systemPrompt = getStudyPrompt(
         taskType, 
