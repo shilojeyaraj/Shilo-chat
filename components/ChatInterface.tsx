@@ -1101,6 +1101,55 @@ export default function ChatInterface() {
           // Memory extraction error - continuing
           // Continue - memory extraction is non-critical
         }
+
+        // Extract and save personal info if the response contains a personal_info_json block
+        try {
+          const personalInfoMatch = assistantMessage.content.match(/```personal_info_json\s*([\s\S]*?)```/);
+          if (personalInfoMatch) {
+            const jsonStr = personalInfoMatch[1].trim();
+            const items = JSON.parse(jsonStr);
+            if (Array.isArray(items) && items.length > 0) {
+              const { savePersonalInfo } = await import('@/lib/utils/personal-info');
+              let savedCount = 0;
+              for (const item of items) {
+                if (item.category && item.title && item.content) {
+                  await savePersonalInfo({
+                    category: item.category,
+                    title: item.title,
+                    content: item.content,
+                    tags: item.tags || [],
+                    metadata: item.metadata || {},
+                  });
+                  savedCount++;
+                }
+              }
+              if (savedCount > 0) {
+                toast.success(`Saved ${savedCount} item${savedCount > 1 ? 's' : ''} to your personal profile`, { duration: 3000 });
+              }
+            }
+
+            // Strip the JSON block from the displayed message
+            const cleanedContent = assistantMessage.content
+              .replace(/```personal_info_json\s*[\s\S]*?```/, '')
+              .trim();
+            assistantMessage.content = cleanedContent;
+
+            // Update the message in state and storage
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessage.id ? { ...m, content: cleanedContent } : m
+              )
+            );
+            if (convId) {
+              await saveMessage(convId, {
+                ...assistantMessage,
+                content: cleanedContent,
+              });
+            }
+          }
+        } catch (error) {
+          // Personal info extraction error - non-critical
+        }
       }
     } catch (error: any) {
       // Chat error handled
@@ -1160,7 +1209,8 @@ export default function ChatInterface() {
         return <Code className="w-4 h-4" />;
       case 'fetch_webpage':
         return <Globe className="w-4 h-4" />;
-      case 'update_personal_info':
+      case 'save_personal_info':
+      case 'update_personal_info': // Legacy support
         return <User className="w-4 h-4" />;
       default:
         return <Zap className="w-4 h-4" />;
@@ -1175,7 +1225,8 @@ export default function ChatInterface() {
       analyze_csv: 'Analyzing CSV',
       code_interpreter: 'Running code',
       fetch_webpage: 'Fetching webpage',
-      update_personal_info: 'Updating personal info',
+      save_personal_info: 'Saving to profile',
+      update_personal_info: 'Saving to profile', // Legacy support
     };
     return labels[toolName] || toolName;
   };

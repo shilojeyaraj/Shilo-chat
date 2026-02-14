@@ -125,81 +125,90 @@ export function getResumeOptimizationPrompt(
   latexResume: string,
   jobPosting: string
 ): string {
-  return `Your job: Match candidates to jobs by intelligently selecting and presenting their most relevant experiences. Think of this as a matching algorithm with a scoring system.
+  return `You are a resume optimization engine. Your job is to produce a tailored LaTeX resume by dynamically selecting the best experiences and projects from the candidate's personal profile to match a specific job posting.
 
-## Matching Strategy
+## IMMUTABLE RULES — NEVER VIOLATE THESE
 
-For each experience in the candidate's background, evaluate:
+1. **Section order is FIXED**: Technical Skills → Experience → Projects → Education. Always this order. Never reorder.
+2. **Technical Skills section is FROZEN**: Copy it EXACTLY from the base template. Do not add, remove, or reword any skill. Do not reorder. Preserve every \\item line character-for-character.
+3. **Education section is FROZEN**: Copy it EXACTLY from the base template. Do not add, remove, or change anything. Preserve it character-for-character.
+4. **Experience section must have EXACTLY 3 entries**: No more, no less. Select the 3 best-matching experiences from the personal profile.
+5. **Projects section must have EXACTLY 3 entries**: No more, no less. Select the 3 best-matching projects from the personal profile.
+6. **LaTeX formatting commands are FROZEN**: Preserve ALL custom commands (\\headingBf, \\headingIt, \\projectHeading, \\toolsline, \\begin{resume_list}, etc.), ALL packages, ALL preamble code, ALL spacing, ALL \\documentTitle, ALL \\section commands EXACTLY as they appear in the base template.
+7. **Content comes ONLY from the personal profile database**: Never invent experiences, projects, metrics, company names, or technologies. If the profile says "40%" you write "40%". Do not fabricate or hallucinate.
 
-**Technical Alignment (40%)**
-- Direct tech stack matches (exact tools/languages mentioned in job)
-- Adjacent technologies (React if they want Next.js)
-- Methodology alignment (Agile, CI/CD, etc.)
+## SELECTION ALGORITHM
 
-**Measurable Impact (30%)**
-- Scale: Users affected, data processed, systems built
-- Results: Performance improvements, cost reductions, time saved
-- Complexity: Problem difficulty, constraints overcome
+For each experience AND project in the personal profile, compute a relevance score:
 
-**Problem-Solving Relevance (20%)**
-- Similar challenges to job requirements
-- Innovation or novel approaches
-- Technical depth demonstrated
+**Technical Match (40%)**: How many of the job's required/preferred technologies does this experience use? Exact matches score highest. Adjacent tech (e.g., React ↔ Next.js) scores partial credit.
 
-**Recency (10%)**
-- More recent = more credible
-- Weight the last 2 years higher
+**Impact Relevance (30%)**: Does this experience demonstrate outcomes that matter for the job? (scale, performance gains, cost savings, user-facing impact)
 
-Select the top 3-4 experiences and 2-3 projects that score highest. It's fine to leave out experiences that don't match well—quality over quantity.
+**Problem Domain Match (20%)**: Does the work address similar challenges? (distributed systems, ML pipelines, full-stack web, data engineering, etc.)
 
-## Resume Structure
+**Recency (10%)**: More recent experiences score higher.
 
-Four sections only, in this order:
-1. Education
-2. Technical Skills
-3. Experience  
-4. Projects
+Pick the top 3 experiences and top 3 projects by score. If an experience currently on the base resume scores lower than one in the profile that isn't on the resume, SWAP IT OUT.
 
-Delete any other sections. This format optimizes for both ATS parsing and recruiter scan patterns.
+## EXPERIENCE ENTRY FORMAT
 
-## Content Rules
+Each experience MUST follow this exact LaTeX pattern from the base template:
 
-**Draw only from the personal database**—the original resume is just a format template, not a content source.
+\\headingBf{Company Name \\textnormal{ (optional descriptor)}}{Date Range}
+\\headingIt{Job Title}{}\\\\[1pt]
+\\begin{resume_list}
+  \\item Bullet point 1...
+  \\item Bullet point 2...
+  \\item Bullet point 3...
+  (3-5 bullets per experience)
+\\end{resume_list}
 
-**Every bullet point**: Action verb + technical specifics + measurable outcome
-- Example: "Built GraphQL API handling 50K requests/day, reducing latency by 40%"
-- Not: "Worked on backend improvements"
+## PROJECT ENTRY FORMAT
 
-**Technical Skills section**:
-- Mirror job posting terminology exactly ("React.js" not "React" if they say "React.js")
-- List skills in decreasing relevance to the job
-- Group logically: Languages | Frameworks | Tools | Methods
+Each project MUST follow this exact LaTeX pattern from the base template:
 
-**ATS requirements**:
-- Standard headers (no creative section names)
-- Exact keyword matches from job description
-- Standard date formats (Month YYYY)
-- No tables, graphics, or text boxes
+\\projectHeading{Project Name}{Live URL}{GitHub URL}
+\\toolsline{Tech stack used}\\\\[1pt]
+\\begin{resume_list}
+  \\item Bullet point 1...
+  \\item Bullet point 2...
+  \\item Bullet point 3...
+  (2-4 bullets per project)
+\\end{resume_list}
 
-## LaTeX Handling
+## BULLET POINT RULES
 
-Preserve all structural elements exactly: commands, packages, document settings, special characters. You're editing the content (text, bullets, dates), not the formatting.
+- Start every bullet with a strong action verb in past tense (Built, Engineered, Designed, Optimized, Implemented, Architected, Developed, etc.)
+- Include specific technologies in \\textbf{bold}
+- Include quantifiable metrics where available from the profile (\\textbf{40\\%}, \\textbf{10x faster}, \\textbf{10k+ users}, etc.)
+- Structure: Action + Technical Detail + Measurable Impact
+- Tailor bullet wording to emphasize skills/keywords from the job posting while staying truthful to the profile data
+- Properly escape all LaTeX special characters (%, &, #, _, etc.)
 
-## Output
+## OUTPUT FORMAT
 
-Return the complete LaTeX document with the 4 required sections, optimized for the specific job posting. Every bullet should demonstrate technical capability and measurable results.
+Return the COMPLETE LaTeX document from \\documentclass to \\end{document}. This means:
+- Full preamble (copied exactly from base template)
+- \\begin{document}
+- \\documentTitle (copied exactly from base template)
+- \\section{Technical Skills} (copied exactly from base template)
+- \\section{Experience} (3 dynamically selected entries)
+- \\section{Projects} (3 dynamically selected entries)
+- \\section{Education} (copied exactly from base template)
+- \\end{document}
+
+Return ONLY the LaTeX code. No markdown wrapping, no explanations, no commentary.
 
 ---
 
-**Optimization note**: Apply scoring transparently. If an experience scores low across all dimensions, it shouldn't make the resume regardless of how impressive it sounds in isolation. The goal is relevance, not exhaustive coverage.
-
-USER'S PERSONAL INFORMATION (USE ONLY THIS DATA):
-${personalInfoContext}
-
-ORIGINAL LaTeX RESUME TEMPLATE (USE ONLY FOR STRUCTURE/FORMATTING):
+BASE TEMPLATE (use for structure, formatting commands, and frozen sections):
 ${latexResume}
 
-JOB POSTING:
+CANDIDATE'S FULL PERSONAL PROFILE (select experiences and projects from here):
+${personalInfoContext}
+
+JOB POSTING TO OPTIMIZE FOR:
 ${jobPosting}`;
 }
 

@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FileText, Copy, Download, Loader2, Upload, Edit2, Check, Mail } from 'lucide-react';
-import { getPersonalInfoContext } from '@/lib/utils/personal-info';
+import { X, FileText, Copy, Download, Loader2, Upload, Edit2, Check, Mail, Briefcase, FolderGit2, GraduationCap, Wrench, AlertTriangle } from 'lucide-react';
+import { getPersonalInfoContext, getPersonalInfo } from '@/lib/utils/personal-info';
 import { saveResumeTemplate, getResumeTemplate } from '@/lib/utils/resume-template';
 import { saveCoverLetterTemplate, getCoverLetterTemplate } from '@/lib/utils/cover-letter-template';
+import { PersonalInfo } from '@/lib/db';
 import toast from 'react-hot-toast';
 
 interface ResumeCustomizerProps {
@@ -13,25 +14,46 @@ interface ResumeCustomizerProps {
 
 type CustomizerMode = 'resume' | 'cover-letter';
 
+interface ProfileStats {
+  experiences: number;
+  projects: number;
+  skills: number;
+  education: number;
+  total: number;
+  experienceNames: string[];
+  projectNames: string[];
+}
+
 export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
   const [mode, setMode] = useState<CustomizerMode>('resume');
-  
+
   // Resume state
   const [latexResume, setLatexResume] = useState('');
   const [isEditingResumeTemplate, setIsEditingResumeTemplate] = useState(false);
   const [resumeTemplateSaved, setResumeTemplateSaved] = useState(false);
-  
+
   // Cover letter state
   const [coverLetterTemplate, setCoverLetterTemplate] = useState('');
   const [isEditingCoverLetterTemplate, setIsEditingCoverLetterTemplate] = useState(false);
   const [coverLetterTemplateSaved, setCoverLetterTemplateSaved] = useState(false);
   const [coverLetterPrompt, setCoverLetterPrompt] = useState('');
-  
+
   // Shared state
   const [jobPosting, setJobPosting] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [optimizedContent, setOptimizedContent] = useState('');
   const [personalInfoLoaded, setPersonalInfoLoaded] = useState(false);
+
+  // Profile stats for resume mode
+  const [profileStats, setProfileStats] = useState<ProfileStats>({
+    experiences: 0,
+    projects: 0,
+    skills: 0,
+    education: 0,
+    total: 0,
+    experienceNames: [],
+    projectNames: [],
+  });
 
   useEffect(() => {
     const loadData = async () => {
@@ -53,9 +75,25 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
           setIsEditingCoverLetterTemplate(true);
         }
 
-        // Check personal info
+        // Load personal info and compute stats
         const context = await getPersonalInfoContext();
         setPersonalInfoLoaded(context.length > 0);
+
+        const allInfo = await getPersonalInfo();
+        const experiences = allInfo.filter((i: PersonalInfo) => i.category === 'experience');
+        const projects = allInfo.filter((i: PersonalInfo) => i.category === 'project');
+        const skills = allInfo.filter((i: PersonalInfo) => i.category === 'skill');
+        const education = allInfo.filter((i: PersonalInfo) => i.category === 'education');
+
+        setProfileStats({
+          experiences: experiences.length,
+          projects: projects.length,
+          skills: skills.length,
+          education: education.length,
+          total: allInfo.length,
+          experienceNames: experiences.map((e: PersonalInfo) => e.title),
+          projectNames: projects.map((p: PersonalInfo) => p.title),
+        });
       } catch (error) {
         console.error('Failed to load data:', error);
       }
@@ -156,6 +194,16 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
       return;
     }
 
+    if (mode === 'resume' && profileStats.experiences < 3) {
+      toast.error(`Need at least 3 experiences in your profile (you have ${profileStats.experiences}). Add more in Personal Info.`);
+      return;
+    }
+
+    if (mode === 'resume' && profileStats.projects < 3) {
+      toast.error(`Need at least 3 projects in your profile (you have ${profileStats.projects}). Add more in Personal Info.`);
+      return;
+    }
+
     setIsGenerating(true);
     setOptimizedContent('');
 
@@ -190,29 +238,25 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
         });
 
         if (!response.ok) {
-          // Check if response is JSON or HTML
           const contentType = response.headers.get('content-type');
           let errorMsg = 'Failed to optimize resume';
-          
+
           if (contentType && contentType.includes('application/json')) {
             try {
               const error = await response.json();
               errorMsg = error.error || error.details || errorMsg;
             } catch (e) {
-              // If JSON parsing fails, use default message
               errorMsg = `Server error (${response.status}): ${response.statusText}`;
             }
           } else {
-            // Response is HTML (error page) or other non-JSON
             const text = await response.text();
             errorMsg = `Server error (${response.status}): ${response.statusText}`;
             console.error('Non-JSON error response:', text.substring(0, 200));
           }
-          
+
           throw new Error(errorMsg);
         }
 
-        // Check content type before parsing
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           const text = await response.text();
@@ -225,7 +269,7 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
           throw new Error('No optimized resume returned from server');
         }
         setOptimizedContent(data.optimizedLatex);
-        toast.success('Resume optimized successfully!');
+        toast.success('Resume optimized! 3 best experiences + 3 best projects selected.');
       } else {
         // Cover letter mode
         let templateToUse = coverLetterTemplate;
@@ -249,34 +293,30 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
             coverLetterTemplate: templateToUse,
             jobPosting,
             personalInfoContext,
-            customPrompt: coverLetterPrompt.trim() || undefined, // Only send if provided
+            customPrompt: coverLetterPrompt.trim() || undefined,
           }),
         });
 
         if (!response.ok) {
-          // Check if response is JSON or HTML
           const contentType = response.headers.get('content-type');
           let errorMsg = 'Failed to optimize cover letter';
-          
+
           if (contentType && contentType.includes('application/json')) {
             try {
               const error = await response.json();
               errorMsg = error.error || error.details || errorMsg;
             } catch (e) {
-              // If JSON parsing fails, use default message
               errorMsg = `Server error (${response.status}): ${response.statusText}`;
             }
           } else {
-            // Response is HTML (error page) or other non-JSON
             const text = await response.text();
             errorMsg = `Server error (${response.status}): ${response.statusText}`;
             console.error('Non-JSON error response:', text.substring(0, 200));
           }
-          
+
           throw new Error(errorMsg);
         }
 
-        // Check content type before parsing
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           const text = await response.text();
@@ -294,7 +334,7 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
     } catch (error: any) {
       console.error('Optimization error:', error);
       const errorMessage = error?.message || 'Failed to optimize';
-      toast.error(errorMessage, { 
+      toast.error(errorMessage, {
         duration: 5000,
         icon: '❌',
         style: {
@@ -333,10 +373,12 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
     toast.success(`${mode === 'resume' ? 'Resume' : 'Cover letter'} downloaded!`);
   };
 
+  const hasEnoughProfile = profileStats.experiences >= 3 && profileStats.projects >= 3;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div 
-        className="bg-gray-800 rounded-xl w-full max-w-6xl h-[90vh] flex flex-col mx-4" 
+      <div
+        className="bg-gray-800 rounded-xl w-full max-w-6xl h-[90vh] flex flex-col mx-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -403,13 +445,65 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
         <div className="flex-1 overflow-y-auto p-6">
           <div className="grid grid-cols-2 gap-6 h-full">
             {/* Left Column: Input */}
-            <div className="space-y-6">
+            <div className="space-y-4">
+              {/* Profile Stats Panel (Resume mode only) */}
+              {mode === 'resume' && (
+                <div className={`p-3 rounded-lg border ${hasEnoughProfile ? 'bg-emerald-900/20 border-emerald-600/30' : 'bg-amber-900/20 border-amber-600/30'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Profile Pool
+                    </span>
+                    {hasEnoughProfile ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-700/50 text-emerald-300">Ready</span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-700/50 text-amber-300">Needs More</span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="flex flex-col items-center">
+                      <Briefcase className={`w-3.5 h-3.5 mb-0.5 ${profileStats.experiences >= 3 ? 'text-emerald-400' : 'text-amber-400'}`} />
+                      <span className="text-lg font-bold text-white">{profileStats.experiences}</span>
+                      <span className="text-[10px] text-gray-400">Experiences</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <FolderGit2 className={`w-3.5 h-3.5 mb-0.5 ${profileStats.projects >= 3 ? 'text-emerald-400' : 'text-amber-400'}`} />
+                      <span className="text-lg font-bold text-white">{profileStats.projects}</span>
+                      <span className="text-[10px] text-gray-400">Projects</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <Wrench className="w-3.5 h-3.5 mb-0.5 text-blue-400" />
+                      <span className="text-lg font-bold text-white">{profileStats.skills}</span>
+                      <span className="text-[10px] text-gray-400">Skills</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <GraduationCap className="w-3.5 h-3.5 mb-0.5 text-blue-400" />
+                      <span className="text-lg font-bold text-white">{profileStats.education}</span>
+                      <span className="text-[10px] text-gray-400">Education</span>
+                    </div>
+                  </div>
+                  {!hasEnoughProfile && (
+                    <div className="mt-2 p-2 bg-amber-900/30 rounded text-[10px] text-amber-300 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                      <span>
+                        Need at least <strong>3 experiences</strong> and <strong>3 projects</strong> in your profile.
+                        Add more via Personal Info or chat (&quot;save this to my profile&quot;).
+                      </span>
+                    </div>
+                  )}
+                  {hasEnoughProfile && (
+                    <div className="mt-2 text-[10px] text-gray-500">
+                      <strong>Fixed:</strong> Skills + Education &bull; <strong>Dynamic:</strong> Best 3 of {profileStats.experiences} experiences + Best 3 of {profileStats.projects} projects
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Template Input */}
               {mode === 'resume' ? (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-gray-300">
-                      Your LaTeX Resume Template
+                      Base LaTeX Template
                     </label>
                     {resumeTemplateSaved && !isEditingResumeTemplate && (
                       <button
@@ -423,11 +517,11 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
                   </div>
                   <div className="space-y-2">
                     {resumeTemplateSaved && !isEditingResumeTemplate ? (
-                      <div className="w-full h-64 px-4 py-3 bg-gray-700/50 text-gray-400 rounded-lg border border-gray-600 flex items-center justify-center">
+                      <div className="w-full px-4 py-3 bg-gray-700/50 text-gray-400 rounded-lg border border-gray-600 flex items-center justify-center" style={{ height: '100px' }}>
                         <div className="text-center">
-                          <Check className="w-8 h-8 text-green-400 mx-auto mb-2" />
-                          <p className="text-sm font-medium">Template Saved</p>
-                          <p className="text-xs mt-1">Using saved template by default</p>
+                          <Check className="w-6 h-6 text-green-400 mx-auto mb-1" />
+                          <p className="text-xs font-medium">Base Template Saved</p>
+                          <p className="text-[10px] mt-0.5 text-gray-500">Skills + Education locked &bull; Formatting preserved</p>
                         </div>
                       </div>
                     ) : (
@@ -439,7 +533,7 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
                             setResumeTemplateSaved(false);
                           }}
                           placeholder="Paste your LaTeX resume template here, or upload a .tex file..."
-                          className="w-full h-64 px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-xs"
+                          className="w-full h-48 px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-xs"
                         />
                         <div className="flex items-center gap-2">
                           <label className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg cursor-pointer transition-colors text-sm">
@@ -588,25 +682,16 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
                 </div>
               )}
 
-              {/* Status & Generate Button */}
+              {/* Generate Button */}
               <div className="space-y-2">
-                {!personalInfoLoaded && (
-                  <div className="p-3 bg-yellow-900/20 border border-yellow-600/30 rounded-lg text-xs text-yellow-400">
-                    ⚠️ Add your personal information in the Personal Info section first
-                  </div>
-                )}
-                {personalInfoLoaded && (
-                  <div className="p-3 bg-blue-900/20 border border-blue-600/30 rounded-lg text-xs text-blue-400">
-                    ✓ Personal info loaded - will use only your Personal Info data
-                  </div>
-                )}
                 <button
                   onClick={handleOptimize}
                   disabled={
-                    isGenerating || 
+                    isGenerating ||
                     (mode === 'resume' && !latexResume.trim() && !resumeTemplateSaved) ||
+                    (mode === 'resume' && !hasEnoughProfile) ||
                     (mode === 'cover-letter' && !coverLetterTemplate.trim() && !coverLetterTemplateSaved) ||
-                    !jobPosting.trim() || 
+                    !jobPosting.trim() ||
                     !personalInfoLoaded
                   }
                   className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors font-medium flex items-center justify-center gap-2"
@@ -614,7 +699,7 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
                   {isGenerating ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      {mode === 'resume' ? 'Optimizing Resume...' : 'Optimizing Cover Letter...'}
+                      {mode === 'resume' ? 'Selecting best experiences & projects...' : 'Optimizing Cover Letter...'}
                     </>
                   ) : (
                     <>
@@ -623,26 +708,31 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
                     </>
                   )}
                 </button>
+                {mode === 'resume' && isGenerating && (
+                  <p className="text-[10px] text-gray-500 text-center">
+                    Analyzing job requirements, scoring {profileStats.experiences} experiences + {profileStats.projects} projects, selecting best 3+3...
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Right Column: Output */}
-            <div>
+            <div className="flex flex-col">
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                {optimizedContent 
-                  ? `Optimized ${mode === 'resume' ? 'LaTeX Resume' : 'Cover Letter'}` 
+                {optimizedContent
+                  ? `Optimized ${mode === 'resume' ? 'LaTeX Resume' : 'Cover Letter'}`
                   : `Optimized ${mode === 'resume' ? 'Resume' : 'Cover Letter'} (will appear here)`
                 }
               </label>
               {mode === 'resume' ? (
-                <pre className="w-full h-full px-4 py-3 bg-gray-900 text-gray-300 rounded-lg border border-gray-600 overflow-auto text-xs font-mono">
-                  {optimizedContent || latexResume || 'Your optimized resume will appear here...'}
+                <pre className="flex-1 w-full px-4 py-3 bg-gray-900 text-gray-300 rounded-lg border border-gray-600 overflow-auto text-xs font-mono">
+                  {optimizedContent || 'Your optimized resume will appear here...\n\nHow it works:\n• Skills section — copied exactly from your base template\n• Education section — copied exactly from your base template\n• Experience — best 3 selected from your profile\n• Projects — best 3 selected from your profile\n\nThe AI scores every experience and project in your\nprofile against the job posting and picks the top matches.'}
                 </pre>
               ) : (
                 <textarea
                   readOnly
                   value={optimizedContent || coverLetterTemplate || 'Your optimized cover letter will appear here...'}
-                  className="w-full h-full px-4 py-3 bg-gray-900 text-gray-300 rounded-lg border border-gray-600 overflow-auto text-sm resize-none"
+                  className="flex-1 w-full px-4 py-3 bg-gray-900 text-gray-300 rounded-lg border border-gray-600 overflow-auto text-sm resize-none"
                 />
               )}
             </div>
@@ -652,4 +742,3 @@ export default function ResumeCustomizer({ onClose }: ResumeCustomizerProps) {
     </div>
   );
 }
-

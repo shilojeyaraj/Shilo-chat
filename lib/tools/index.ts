@@ -377,12 +377,54 @@ const fetchWebpageTool: Tool = {
   },
 };
 
+/**
+ * Save Personal Info Tool - Save information to user's personal profile from chat
+ * Triggered when user asks to remember/save something about themselves
+ */
+const savePersonalInfoTool: Tool = {
+  name: 'save_personal_info',
+  description: 'Save information about the user to their personal profile (experience, projects, skills, education, achievements, contact info, or general facts)',
+  parameters: {
+    items: 'array - items to save, each with: category, title, content, tags (optional), metadata (optional)',
+  },
+  execute: async ({ items }) => {
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return { error: 'No items provided to save' };
+    }
+
+    // Validate categories
+    const validCategories = ['experience', 'project', 'education', 'skill', 'resume', 'general', 'achievement', 'contact'];
+    for (const item of items) {
+      if (!item.title || !item.content || !item.category) {
+        return { error: `Each item needs title, content, and category fields` };
+      }
+      if (!validCategories.includes(item.category)) {
+        return { error: `Invalid category "${item.category}". Valid: ${validCategories.join(', ')}` };
+      }
+    }
+
+    return {
+      action: 'save_personal_info',
+      items: items.map((item: any) => ({
+        category: item.category,
+        title: item.title,
+        content: item.content,
+        tags: item.tags || [],
+        metadata: item.metadata || {},
+      })),
+      savedCount: items.length,
+      message: `${items.length} item(s) saved to personal profile`,
+    };
+  },
+};
+
 export const tools: Tool[] = [
   webSearchTool,
   parseFileTool,
   analyzeCsvTool,
   codeInterpreterTool,
   fetchWebpageTool,
+  savePersonalInfoTool,
 ];
 
 /**
@@ -444,6 +486,20 @@ export async function detectRequiredTools(
   const urlRegex = /https?:\/\/[^\s]+/i;
   if (urlRegex.test(userMessage) && !requiredTools.includes('web_search')) {
     requiredTools.push('fetch_webpage');
+  }
+
+  // Personal info saving detection
+  const savePersonalTriggers = [
+    'save this to my profile', 'add this to my profile', 'remember this about me',
+    'save to my personal', 'add to my personal', 'update my profile',
+    'add to my info', 'save to my info', 'remember that i', 'remember i',
+    'note that i', 'save that i', 'add that i',
+    'store this in my profile', 'put this in my profile',
+    'save my', 'add my', 'update my personal info',
+    'save this info', 'save this information',
+  ];
+  if (savePersonalTriggers.some((trigger) => userMessage.toLowerCase().includes(trigger))) {
+    requiredTools.push('save_personal_info');
   }
 
   return requiredTools;
@@ -530,6 +586,10 @@ function extractToolParams(toolName: string, context: any): any {
     case 'fetch_webpage':
       const urlMatch = context.userMessage.match(/https?:\/\/[^\s]+/);
       return { url: urlMatch?.[0] || '' };
+    case 'save_personal_info':
+      // Items will be extracted by the LLM from the conversation context
+      // Pass the user message so the chat API can instruct the LLM to structure it
+      return { userMessage: context.userMessage, items: context.personalInfoItems || [] };
     default:
       return {};
   }

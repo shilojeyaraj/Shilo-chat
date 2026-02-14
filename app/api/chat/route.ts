@@ -387,6 +387,26 @@ export async function POST(req: NextRequest) {
       systemPrompt = getChatAgentPrompt(taskType, ragContext, toolResults, personalInfoContext, memoryContext);
     }
     
+    // If save_personal_info tool is triggered, inject extraction instruction into prompt
+    const isSavingPersonalInfo = requiredTools.includes('save_personal_info');
+    if (isSavingPersonalInfo) {
+      systemPrompt += `\n\n[PERSONAL INFO SAVE MODE]
+The user wants to save information to their personal profile. You MUST:
+1. Extract the relevant information from their message
+2. At the END of your response, include a JSON block wrapped in \`\`\`personal_info_json markers
+3. Structure each item with: category, title, content, tags (optional array), metadata (optional object)
+4. Valid categories: experience, project, education, skill, resume, general, achievement, contact
+5. Be smart about categorization - work experience goes to "experience", technical skills to "skill", etc.
+6. Write a friendly confirmation message BEFORE the JSON block
+
+Example format at end of your response:
+\`\`\`personal_info_json
+[{"category":"skill","title":"Python Programming","content":"Proficient in Python with experience in Django, FastAPI, and data analysis with pandas/numpy","tags":["python","django","fastapi"]},{"category":"experience","title":"Software Engineer at Google","content":"Worked as a Software Engineer at Google from 2020-2023, focusing on search infrastructure","tags":["google","software-engineering"],"metadata":{"company":"Google","startDate":"2020","endDate":"2023"}}]
+\`\`\`
+
+IMPORTANT: Always include the personal_info_json block. The user's information will be saved automatically from it.`;
+    }
+
     // Truncate system prompt if it's too large (especially with images)
     // Claude handles large images well, so we can keep more context
     if (hasImages) {
