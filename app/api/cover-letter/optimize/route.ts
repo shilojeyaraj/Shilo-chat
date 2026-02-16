@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     const messages: Message[] = [
       {
         role: 'system',
-        content: `You are an expert cover letter writer. You preserve the exact structure and paragraph order of the template and only optimize content using the user's personal information to match job requirements. You never use content from the original template, only from the personal information database.${customPrompt ? ' IMPORTANT: The user has provided custom instructions - follow those instructions as a priority while maintaining the template structure.' : ''}`,
+        content: `You are a cover letter generator. You output ONLY the final cover letter text — no introductions, no commentary, no "Here's your cover letter:", no explanations, no markdown headers. Your response starts with the first line of the letter and ends with the signature. The letter is ready to paste into a document and send.`,
       },
       {
         role: 'user',
@@ -122,8 +122,46 @@ export async function POST(req: NextRequest) {
 
     let optimizedCoverLetter = response.content || '';
 
-    // Clean up response (remove markdown code blocks if present)
-    optimizedCoverLetter = optimizedCoverLetter.replace(/```(?:text|txt)?\n?/g, '').replace(/```\n?/g, '').trim();
+    // Clean up response — strip any AI commentary/preamble
+    // Remove markdown code blocks if present
+    optimizedCoverLetter = optimizedCoverLetter.replace(/```(?:text|txt|markdown|md)?\n?/g, '').replace(/```\n?/g, '').trim();
+
+    // Strip common AI preamble patterns (anything before the actual letter starts)
+    // Cover letters typically start with a date, "Dear", or the sender's address
+    const preamblePatterns = [
+      /^.*?(?=\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/s, // Before a date
+      /^.*?(?=Dear\s)/s, // Before "Dear"
+      /^.*?(?=To Whom)/s, // Before "To Whom"
+      /^.*?(?=Hiring Manager)/si, // Before "Hiring Manager"
+    ];
+
+    for (const pattern of preamblePatterns) {
+      const match = optimizedCoverLetter.match(pattern);
+      if (match && match[0].length > 0 && match[0].length < 500) {
+        // Only strip if the preamble is reasonably short (not the whole letter)
+        const preamble = match[0];
+        // Check it's actually preamble (contains AI-like phrases)
+        if (/here'?s|below|following|personalized|optimized|cover letter|i'?ve|crafted|drafted/i.test(preamble)) {
+          optimizedCoverLetter = optimizedCoverLetter.slice(preamble.length).trim();
+          break;
+        }
+      }
+    }
+
+    // Strip trailing AI commentary (anything after the signature block)
+    // Look for common sign-offs followed by AI commentary
+    const trailingPatterns = [
+      /\n---\n.+$/s,
+      /\n\*\*Note.+$/s,
+      /\nI hope this.+$/s,
+      /\nThis cover letter.+$/s,
+      /\nKey changes.+$/s,
+      /\nChanges made.+$/s,
+    ];
+
+    for (const pattern of trailingPatterns) {
+      optimizedCoverLetter = optimizedCoverLetter.replace(pattern, '').trim();
+    }
 
     return NextResponse.json({ optimizedCoverLetter });
 
