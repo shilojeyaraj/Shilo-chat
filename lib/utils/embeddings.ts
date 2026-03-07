@@ -1,13 +1,6 @@
 /**
- * Generate embeddings using OpenAI API
- * NOTE: Client-side embeddings (@xenova/transformers) removed due to webpack bundling issues
- * OpenAI API is required for embeddings (set OPENAI_API_KEY in .env.local)
- */
-
-/**
- * Generate embeddings using OpenAI API
- * - Server-side: Calls OpenAI API directly (faster, no extra HTTP hop)
- * - Client-side: Calls our /api/embeddings endpoint (keeps API key secure)
+ * Generate embeddings using OpenAI API (OPENAI_API_KEY in .env.local).
+ * Server-side: calls OpenAI directly; client-side: calls /api/embeddings.
  */
 async function generateOpenAIEmbeddings(texts: string[]): Promise<number[][]> {
   // Check if we're on the server (Node.js) or client (browser)

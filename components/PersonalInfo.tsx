@@ -125,12 +125,70 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
     });
   };
 
-  // Handle file upload and extraction
+  // Shared accept attribute for all file inputs (projects, resume, docs)
+  const FILE_ACCEPT = '.pdf,.docx,.doc,.txt,.md,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain,text/markdown,text/csv,application/json';
+
+  // Add file content directly to profile (no API) - for TXT, MD, JSON
+  const addFileDirectlyToProfile = async (file: File, text: string): Promise<number> => {
+    const fileName = file.name.replace(/\.[^/.]+$/, '') || 'Uploaded file';
+    const isJson = file.name.toLowerCase().endsWith('.json');
+
+    if (isJson) {
+      try {
+        const parsed = JSON.parse(text);
+        // Array of items: { title, content, category?, tags?, metadata? }
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          let saved = 0;
+          for (const item of parsed) {
+            const category = (item.category && ['experience', 'project', 'education', 'skill', 'resume', 'achievement', 'contact', 'general'].includes(item.category))
+              ? item.category
+              : 'general';
+            await savePersonalInfo({
+              category,
+              title: item.title || fileName + ` (${saved + 1})`,
+              content: typeof item.content === 'string' ? item.content : JSON.stringify(item.content || item),
+              tags: Array.isArray(item.tags) ? item.tags : undefined,
+              metadata: item.metadata || {},
+            });
+            saved++;
+          }
+          return saved;
+        }
+        // Single object
+        if (parsed && typeof parsed === 'object') {
+          const category = (parsed.category && ['experience', 'project', 'education', 'skill', 'resume', 'achievement', 'contact', 'general'].includes(parsed.category))
+            ? parsed.category
+            : 'general';
+          await savePersonalInfo({
+            category,
+            title: parsed.title || fileName,
+            content: typeof parsed.content === 'string' ? parsed.content : JSON.stringify(parsed),
+            tags: Array.isArray(parsed.tags) ? parsed.tags : undefined,
+            metadata: parsed.metadata || {},
+          });
+          return 1;
+        }
+      } catch {
+        // Not valid JSON for our shape - add as one General item
+      }
+    }
+
+    // TXT, MD, or invalid JSON: add as one item (project or general)
+    const category: PersonalInfo['category'] = file.name.toLowerCase().includes('readme') || file.name.toLowerCase().includes('project') ? 'project' : 'general';
+    await savePersonalInfo({
+      category,
+      title: fileName,
+      content: text,
+      tags: [],
+    });
+    return 1;
+  };
+
+  // Handle file upload: direct add for TXT/MD/JSON, AI extraction for PDF/DOCX/CSV
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type - support multiple formats
     const validTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -142,8 +200,7 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
     ];
     const validExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md', '.csv', '.json'];
     const fileName = file.name.toLowerCase();
-    const isValidType = validTypes.includes(file.type) || 
-                       validExtensions.some(ext => fileName.endsWith(ext));
+    const isValidType = validTypes.includes(file.type) || validExtensions.some(ext => fileName.endsWith(ext));
 
     if (!isValidType) {
       toast.error('Please upload a PDF, DOCX, TXT, MD, CSV, or JSON file');
@@ -155,6 +212,30 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
       return;
     }
 
+    const canAddDirectly = fileName.endsWith('.txt') || fileName.endsWith('.md') || fileName.endsWith('.json');
+
+    if (canAddDirectly) {
+      setIsExtracting(true);
+      try {
+        const text = await file.text();
+        if (!text.trim()) {
+          toast.error('File is empty');
+          return;
+        }
+        const count = await addFileDirectlyToProfile(file, text);
+        toast.success(count > 1 ? `Added ${count} items to your profile.` : 'Added to your profile.');
+        loadItems();
+      } catch (err: any) {
+        console.error('Direct add error:', err);
+        toast.error(err?.message || 'Failed to add file to profile');
+      } finally {
+        setIsExtracting(false);
+        e.target.value = '';
+      }
+      return;
+    }
+
+    // PDF, DOCX, CSV: use AI extraction
     setIsExtracting(true);
     setIsAdding(true);
     setEditingId(null);
@@ -172,21 +253,18 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to extract information');
+        throw new Error(result.error || result.details || 'Failed to extract information');
       }
 
       setExtractedData(result.data);
-      
-      // Auto-fill form with extracted data
       await autoFillFromExtractedData(result.data);
-      
-      toast.success('Information extracted! Review and edit before saving.');
+      toast.success('Information extracted! Review below and click "Save All" to add everything to your profile.');
     } catch (error: any) {
       console.error('Extraction error:', error);
-      toast.error(error.message || 'Failed to extract information from file');
+      toast.error(error.message || 'Failed to extract. Try uploading a TXT or MD file to add directly to your profile.');
     } finally {
       setIsExtracting(false);
-      e.target.value = ''; // Reset file input
+      e.target.value = '';
     }
   };
 
@@ -337,7 +415,6 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
       setFormData(itemsToAdd[0].data as Partial<PersonalInfo>);
       // Store all extracted items for batch saving
       setExtractedData({ ...data, _itemsToAdd: itemsToAdd });
-      toast.success(`Extracted ${itemsToAdd.length} items. Review the first one, then you can save all or edit individually.`);
     } else {
       toast.error('No structured information found in the document');
     }
@@ -401,7 +478,7 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
               {isExtracting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Extracting...
+                  Processing...
                 </>
               ) : (
                 <>
@@ -411,7 +488,7 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
               )}
               <input
                 type="file"
-                accept=".pdf,.docx,.doc,.txt,.md,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain,text/markdown,text/csv,application/json"
+                accept={FILE_ACCEPT}
                 onChange={handleFileUpload}
                 className="hidden"
                 disabled={isExtracting}
@@ -613,16 +690,16 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
                     <Save className="w-4 h-4" />
                     Save
                   </button>
-                  {extractedData?._itemsToAdd && extractedData._itemsToAdd.length > 1 && (
-                    <button
-                      onClick={handleSaveAllExtracted}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 transition-colors"
-                      title={`Save all ${extractedData._itemsToAdd.length} extracted items`}
-                    >
-                      <Save className="w-4 h-4" />
-                      Save All ({extractedData._itemsToAdd.length})
-                    </button>
-                  )}
+{extractedData?._itemsToAdd && extractedData._itemsToAdd.length > 0 && (
+                      <button
+                        onClick={handleSaveAllExtracted}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                        title={`Add all ${extractedData._itemsToAdd.length} extracted item(s) to your profile`}
+                      >
+                        <Save className="w-4 h-4" />
+                        Add All to Profile ({extractedData._itemsToAdd.length})
+                      </button>
+                    )}
                   <button
                     onClick={handleCancel}
                     className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
@@ -648,17 +725,17 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
                 {isExtracting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Extracting...
+                    Processing...
                   </>
                 ) : (
                   <>
                     <Upload className="w-4 h-4" />
-                    Upload File (PDF/TXT/MD)
+                    Upload File (PDF, DOCX, TXT, MD, CSV, JSON)
                   </>
                 )}
                 <input
                   type="file"
-                  accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+                  accept={FILE_ACCEPT}
                   onChange={handleFileUpload}
                   className="hidden"
                   disabled={isExtracting}
@@ -671,7 +748,7 @@ export default function PersonalInfoManager({ onClose }: PersonalInfoProps) {
           {Object.keys(groupedItems).length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               <p>No personal information stored yet.</p>
-              <p className="text-sm mt-2">Click "Add New Item" to get started.</p>
+              <p className="text-sm mt-2">Click &quot;Add New Item&quot; to get started.</p>
             </div>
           ) : (
             <div className="space-y-6">

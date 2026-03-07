@@ -23,7 +23,6 @@ import {
   incrementMessageCount,
   getUsageData 
 } from '@/lib/utils/usage-tracker';
-// import { calculateOpenRouterCost } from '@/lib/llm/openrouter-models';
 
 interface Message {
   id: string;
@@ -100,10 +99,9 @@ const TASK_ICONS: Record<string, any> = {
   general: Brain,
 };
 
-// Image component with loading skeleton
-function ImageWithSkeleton({ src, alt }: { src: string; alt: string }) {
+// Image component with loading skeleton (memoized to avoid re-renders when parent updates)
+const ImageWithSkeleton = React.memo(function ImageWithSkeleton({ src, alt }: { src: string; alt: string }) {
   const [imageLoaded, setImageLoaded] = useState(false);
-  
   return (
     <div className="relative">
       {!imageLoaded && (
@@ -120,7 +118,7 @@ function ImageWithSkeleton({ src, alt }: { src: string; alt: string }) {
       />
     </div>
   );
-}
+});
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -2414,7 +2412,7 @@ export default function ChatInterface() {
                     className="w-full px-3 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    Set a monthly spending limit. You'll receive alerts at 50%, 75%, 90%, and 100%.
+                    Set a monthly spending limit. You&apos;ll receive alerts at 50%, 75%, 90%, and 100%.
                     {monthlyBudget && costData.monthly > 0 && (
                       <span className="block mt-1 text-yellow-400">
                         Current: ${costData.monthly.toFixed(2)} / ${monthlyBudget.toFixed(2)} ({((costData.monthly / monthlyBudget) * 100).toFixed(1)}%)

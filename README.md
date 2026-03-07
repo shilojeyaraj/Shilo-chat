@@ -2,6 +2,39 @@
 
 A production-grade AI chatbot built on Next.js with PDF parsing, RAG (Retrieval-Augmented Generation), and advanced personalization features.
 
+---
+
+## Live demo
+
+| Link | Description |
+|------|--------------|
+| **[Live app](https://shilo-chat.vercel.app)** *(add your deploy URL)* | Try the app in the browser. |
+| **Run locally** | See [Getting started](#getting-started) below. |
+
+> **Note:** Replace the link above with your actual deployment URL (e.g. Vercel) when you deploy. Until then, use "Run locally" to try the app.
+
+---
+
+## Screenshots
+
+| Chat with model badges | PDF upload & RAG |
+|------------------------|------------------|
+| *(Add screenshot: `docs/screenshots/chat.png`)* | *(Add screenshot: `docs/screenshots/upload.png`)* |
+
+> Add 1–2 screenshots of the main interface (e.g. chat view, upload view) to `docs/screenshots/` and link them here.
+
+---
+
+## Demo video
+
+| Link | Description |
+|------|--------------|
+| **[Watch demo (1–3 min)](https://loom.com/your-demo)** *(replace with your Loom/YouTube link)* | Walkthrough: upload PDF, ask a question, see RAG and model routing in action. |
+
+> Record a short Loom or YouTube walkthrough and paste the link above. This helps recruiters and reviewers see the app without running it.
+
+---
+
 ## Features
 
 - ✅ **Intelligent Model Router**: Automatically selects the best model for each task (code, search, reasoning, etc.)
@@ -117,8 +150,7 @@ The AI automatically uses tools when needed:
 - **TypeScript** - Type safety
 - **Tailwind CSS** - Styling
 - **Dexie.js** - IndexedDB wrapper
-- **pdf-parse** - PDF text extraction
-- **@xenova/transformers** - Client-side embeddings (fallback)
+- **pdf-parse** - PDF text extraction (server-side)
 - **react-hot-toast** - Notifications
 - **lucide-react** - Icons
 - **openai** - OpenAI SDK
@@ -143,6 +175,36 @@ The intelligent router automatically selects the cheapest model for each task:
 
 The router ensures you only pay for premium models when needed (e.g., Kimi K2 for complex reasoning and vision, Claude for code editing), while using cheaper models for simple tasks.
 
+## Testing
+
+The project uses **Jest** with **React Testing Library** for unit tests, component (frontend) tests, and API route integration tests.
+
+| Command | Description |
+|---------|-------------|
+| `pnpm test` | Run tests in watch mode (Jest). |
+| `pnpm test:run` | Run all tests once (for CI). |
+| `pnpm test:coverage` | Run tests with coverage report. |
+
+**What’s covered:**
+
+- **Unit tests:** `lib/utils` (chunking, text normalization, search/cosine similarity), `lib/llm/router` (task classification).
+- **Component tests:** `ChatInterface` (message input, send), `PdfUpload` (upload area, document list).
+- **Integration tests:** `POST /api/embeddings` (validation, error handling), `POST /api/chat` (invalid/missing body, minimal valid request).
+
+---
+
+## CI / DevOps
+
+**GitHub Actions** runs on every push and pull request to `main`/`master`:
+
+1. **Lint** — `pnpm lint`
+2. **Tests** — `pnpm test:run` (unit + component + API integration)
+3. **Build** — `pnpm build`
+
+Workflow file: [`.github/workflows/ci.yml`](.github/workflows/ci.yml). No secrets are required for lint and tests; add `OPENAI_API_KEY` / `OPEN_ROUTER_API_KEY` in repo secrets if you want the build step to use real env in CI.
+
+---
+
 ## Development
 
 ### Project Structure
@@ -150,30 +212,25 @@ The router ensures you only pay for premium models when needed (e.g., Kimi K2 fo
 ```
 ├── app/
 │   ├── api/
-│   │   ├── chat/route.ts          # Intelligent chat API with routing
-│   │   ├── llm/route.ts           # Legacy LLM API (for compatibility)
-│   │   ├── embeddings/route.ts    # Embeddings API
-│   │   └── pdf/parse/route.ts     # PDF parsing API
-│   ├── layout.tsx                 # Root layout
-│   ├── page.tsx                   # Home page
-│   └── globals.css                # Global styles
+│   │   ├── chat/route.ts              # Intelligent chat API with routing
+│   │   ├── embeddings/route.ts         # Embeddings API
+│   │   ├── files/parse/route.ts        # File parsing (PDF, DOCX, etc.)
+│   │   ├── providers/route.ts         # Available LLM providers
+│   │   ├── personal-info/              # Extract & save personal info
+│   │   ├── resume/optimize/            # Resume optimization
+│   │   └── cover-letter/optimize/      # Cover letter optimization
+│   ├── layout.tsx
+│   ├── page.tsx
+│   └── globals.css
 ├── components/
-│   ├── ChatInterface.tsx          # Main chat UI with model badges
-│   └── PdfUpload.tsx              # PDF upload component
+│   ├── ChatInterface.tsx              # Main chat UI with model badges
+│   └── PdfUpload.tsx                  # PDF/file upload component
 ├── lib/
-│   ├── llm/
-│   │   ├── providers.ts           # Multi-provider LLM wrapper
-│   │   ├── router.ts              # Task classification & routing
-│   │   └── types.ts               # Type definitions
-│   ├── tools/
-│   │   └── index.ts               # Tool system (web search, PDF, CSV, etc.)
-│   ├── db/
-│   │   └── index.ts               # IndexedDB setup
-│   └── utils/
-│       ├── chunking.ts            # Text chunking utilities
-│       ├── embeddings.ts          # Embedding generation
-│       ├── pdf.ts                 # PDF processing
-│       └── search.ts              # Semantic search
+│   ├── llm/                            # Providers, router, agent-router, types
+│   ├── tools/                         # Web search, PDF, CSV, code exec, etc.
+│   ├── db/                            # IndexedDB (Dexie)
+│   ├── prompts/                       # Agent, study, coding prompts
+│   └── utils/                         # Chunking, search, embeddings, pdf, etc.
 └── package.json
 ```
 
@@ -183,6 +240,10 @@ The router ensures you only pay for premium models when needed (e.g., Kimi K2 fo
 - [x] Tool system (web search, PDF, CSV, code execution)
 - [x] Cost tracking
 - [x] Model badges and tool indicators
+- [x] Unit, component, and integration tests (Jest + RTL)
+- [x] CI (GitHub Actions: lint, test, build)
+- [ ] Add live demo URL and demo video to README
+- [ ] Add screenshots to `docs/screenshots/`
 - [ ] Add Monaco code editor integration
 - [ ] Add file upload for other formats (TXT, JSON, MD, images)
 - [ ] Implement personalization features

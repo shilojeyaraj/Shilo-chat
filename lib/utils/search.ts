@@ -2,9 +2,9 @@ import { db, DocumentChunk } from '@/lib/db';
 import { generateEmbedding } from './embeddings';
 
 /**
- * Calculate cosine similarity between two vectors
+ * Calculate cosine similarity between two vectors (exported for testing)
  */
-function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) {
     throw new Error('Vectors must have the same length');
   }

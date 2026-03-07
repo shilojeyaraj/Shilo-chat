@@ -34,14 +34,6 @@ export async function parseFile(file: File): Promise<ParsedFile> {
 }
 
 /**
- * Parse PDF file and extract text (legacy function for backward compatibility)
- */
-export async function parsePDF(file: File): Promise<string> {
-  const parsed = await parseFile(file);
-  return parsed.text;
-}
-
-/**
  * Process any file: parse, chunk, and generate embeddings
  * Supports: PDF, DOCX, PPTX, TXT, MD, CSV, XLSX, JSON
  * Note: Images are handled separately (returned with isImage flag)
@@ -72,19 +64,5 @@ export async function processFile(
   const embeddings = await generateEmbeddings(chunks);
 
   return { chunks, embeddings };
-}
-
-/**
- * Process PDF file: parse, chunk, and generate embeddings (legacy function)
- */
-export async function processPDF(
-  file: File,
-  documentId: string
-): Promise<{ chunks: string[]; embeddings: number[][] }> {
-  const result = await processFile(file, documentId);
-  return {
-    chunks: result.chunks,
-    embeddings: result.embeddings,
-  };
 }
 

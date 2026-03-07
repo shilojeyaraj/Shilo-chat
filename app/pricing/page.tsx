@@ -238,7 +238,7 @@ function PricingContent() {
             <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
               <h3 className="font-semibold mb-2">What happens if I cancel my subscription?</h3>
               <p className="text-sm text-gray-400">
-                You'll retain access to your plan until the end of your billing period, then revert to the free tier.
+                You&apos;ll retain access to your plan until the end of your billing period, then revert to the free tier.
               </p>
             </div>
           </div>

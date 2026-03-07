@@ -59,7 +59,7 @@ export default function FundingErrorModal({ isOpen, onClose }: FundingErrorModal
                 </a>
               </li>
               <li>Navigate to <strong className="text-slate-200">Settings → Billing</strong></li>
-              <li>Click <strong className="text-slate-200">"Add Credits"</strong> or <strong className="text-slate-200">"Top Up"</strong></li>
+              <li>Click <strong className="text-slate-200">&quot;Add Credits&quot;</strong> or <strong className="text-slate-200">&quot;Top Up&quot;</strong></li>
               <li>Add your payment method and purchase credits</li>
               <li>Wait a few moments for the credits to be applied</li>
               <li>Come back here and try again</li>

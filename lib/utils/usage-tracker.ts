@@ -11,8 +11,6 @@ export interface UsageData {
   subscriptionEndDate: string | null;
 }
 
-const FREE_TIER_LIMIT = Infinity; // No limit for personal use
-
 /**
  * Get current usage data from localStorage
  */
@@ -88,29 +86,9 @@ export function incrementMessageCount(): UsageData {
 }
 
 /**
- * Check if user can send messages (hasn't hit limit)
- * @deprecated Message limits removed - always returns true
- */
-export function canSendMessage(): boolean {
-  // Message limits removed for personal use
-  return true;
-}
-
-/**
- * Get remaining messages for today
- * @deprecated Message limits removed - always returns Infinity
- */
-export function getRemainingMessages(): number {
-  // Message limits removed for personal use
-  return Infinity;
-}
-
-/**
- * Get message limit for current tier
- * @deprecated Message limits removed - always returns Infinity
+ * Get message limit for current tier (for display; no enforced limit).
  */
 export function getMessageLimit(): number {
-  // Message limits removed for personal use
   return Infinity;
 }
 
