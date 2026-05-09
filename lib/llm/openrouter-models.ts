@@ -4,11 +4,11 @@
  */
 export const OPENROUTER_MODEL_MAP: Record<string, string> = {
   // Anthropic Claude models (latest versions)
-  'claude-3-5-sonnet-20240620': 'anthropic/claude-3.5-sonnet',
-  'claude-3-5-sonnet-20241022': 'anthropic/claude-3.5-sonnet', // Latest Sonnet 4.5
+  'claude-3-5-sonnet-20240620': 'anthropic/claude-sonnet-4.5',
+  'claude-3-5-sonnet-20241022': 'anthropic/claude-sonnet-4.5',
   'claude-3-5-haiku-20241022': 'anthropic/claude-3.5-haiku',
-  'claude-opus-4.1': 'anthropic/claude-opus-4', // Claude Opus 4.1 for complex coding
-  'claude-sonnet-4.5': 'anthropic/claude-3.5-sonnet', // Alias for latest Sonnet
+  'claude-opus-4.1': 'anthropic/claude-opus-4',
+  'claude-sonnet-4.5': 'anthropic/claude-sonnet-4.5',
   
   // Kimi/Moonshot models
   'kimi-k2-turbo-preview': 'moonshotai/kimi-k2-turbo-preview',
@@ -47,7 +47,7 @@ export function getOpenRouterModelId(internalModel: string): string {
  */
 export const OPENROUTER_PRICING: Record<string, { input: number; output: number }> = {
   // Anthropic Claude models
-  'anthropic/claude-3.5-sonnet': { input: 3, output: 15 }, // Sonnet 4.5
+  'anthropic/claude-sonnet-4.5': { input: 3, output: 15 },
   'anthropic/claude-3.5-haiku': { input: 0.8, output: 4 },
   'anthropic/claude-opus-4': { input: 15, output: 75 }, // Opus 4.1 for complex coding
   

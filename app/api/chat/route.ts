@@ -639,7 +639,7 @@ IMPORTANT: Always include the personal_info_json block. The user's information w
                 // Switch to Claude Sonnet via OpenRouter (200K context, higher TPM limits)
                 fallbackConfig = {
                   provider: 'openrouter',
-                  model: 'anthropic/claude-3.5-sonnet',
+                  model: 'anthropic/claude-sonnet-4.5',
                   maxTokens: finalConfig.maxTokens,
                   temperature: finalConfig.temperature,
                   costPer1M: 3, // Claude Sonnet pricing

@@ -48,7 +48,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   code_editing: {
     provider: 'openrouter',
-    model: 'anthropic/claude-3.5-sonnet', // Claude Sonnet 4.5 via OpenRouter
+    model: 'anthropic/claude-sonnet-4.5', // Claude Sonnet 4.5 via OpenRouter
     maxTokens: 8192,
     temperature: 0.5,
     costPer1M: 3,
@@ -69,7 +69,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   creative_writing: {
     provider: 'openrouter',
-    model: 'anthropic/claude-3.5-sonnet', // Claude Sonnet 4.5 via OpenRouter
+    model: 'anthropic/claude-sonnet-4.5', // Claude Sonnet 4.5 via OpenRouter
     maxTokens: 8192,
     temperature: 1.0,
     costPer1M: 3,
@@ -83,7 +83,7 @@ const ROUTING_TABLE: Record<TaskType, ModelConfig> = {
   },
   long_context: {
     provider: 'openrouter',
-    model: 'anthropic/claude-3.5-sonnet', // Claude Sonnet 4.5 via OpenRouter
+    model: 'anthropic/claude-sonnet-4.5', // Claude Sonnet 4.5 via OpenRouter
     maxTokens: 8192,
     temperature: 0.7,
     costPer1M: 3,
@@ -419,7 +419,7 @@ export async function routeRequest(
   if (context.hasImages || (context.fileCount && context.fileCount > 0)) {
     const visionConfig: ModelConfig = {
       provider: 'openrouter',
-      model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
+      model: 'anthropic/claude-sonnet-4.5', // OpenRouter model ID
       maxTokens: 8192,
             temperature: 0.7,
             costPer1M: 3,
@@ -437,7 +437,7 @@ export async function routeRequest(
     if (taskType === 'code_generation' || taskType === 'code_editing') {
       const codingConfig = {
         provider: 'openrouter' as const,
-        model: 'anthropic/claude-3.5-sonnet', // OpenRouter model ID
+        model: 'anthropic/claude-sonnet-4.5', // OpenRouter model ID
         maxTokens: 8192,
         temperature: 0.3,
         costPer1M: 3,

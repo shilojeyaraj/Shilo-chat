@@ -71,7 +71,7 @@ const DEFAULT_MODEL_OPTIONS = [
   { value: 'groq/llama-3.3-70b-versatile', label: 'Llama 70B (Balanced)' },
   { value: 'google/gemini-2.0-flash-exp:free', label: 'Gemini 2.0 (Vision - Best)' },
   { value: 'openai/gpt-4o', label: 'GPT-4o (Vision)' },
-  { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Vision/Files)' },
+  { value: 'anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5 (Vision/Files)' },
   { value: 'anthropic/claude-3.5-haiku', label: 'Claude 3.5 Haiku (Vision - Cheaper)' },
   { value: 'perplexity/sonar', label: 'Perplexity Sonar (Search)' },
   { value: 'perplexity/sonar-pro', label: 'Perplexity Pro (Research)' },
